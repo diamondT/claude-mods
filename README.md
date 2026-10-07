@@ -24,7 +24,7 @@ Answer `y` to add the marketplace, then pick a scope (user scope is first; Enter
 
 ## Requirements
 
-- `status-line`: `git` and `date` (GNU or BSD) on `PATH`.
+- `status-line`: `git` and `date` (GNU or BSD) on `PATH`; a [Nerd Font](https://www.nerdfonts.com) in the terminal (quota pills).
 
 ## Develop
 

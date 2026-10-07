@@ -1,23 +1,33 @@
-import type { Git, Limits, Line } from '../types'
+import type { Git, Line } from '../types'
 
-export type Run = { text: string; color?: string; dim?: boolean; bold?: boolean }
-
-export type QuotaRow = { fill: string; percent: number; color: string }
+export type Run = { text: string; color?: string; bg?: string; dim?: boolean; bold?: boolean }
 
 // catppuccin mocha
 const C = {
   red: '#f38ba8',
+  peach: '#fab387',
   yellow: '#e5c890', // frappé; mocha's is too bright
   green: '#a6e3a1',
   blue: '#89b4fa',
   mauve: '#cba6f7',
   teal: '#94e2d5',
+  text: '#cdd6f4',
+  overlay1: '#7f849c',
+  surface2: '#585b70',
 }
 
-export const BAR_EMPTY = '#3b4252' // context-band's free space
+// 20% accent over mocha base
+const TINT = { green: '#394545', mauve: '#413956' }
 
-// emoji presentation, so the layout counts the 2 cells the terminal draws
-const STOPWATCH = '⏱\uFE0F'
+// Nerd Font: powerline half circles, nf-fa
+const CAP_L = '\uE0B6'
+const CAP_R = '\uE0B4'
+const GAUGE = '\uF0E4'
+const CALENDAR = '\uF073'
+const HISTORY = '\uF1DA'
+
+const METER_CELLS = 8
+const SEP: Run = { text: ' │ ', color: C.surface2 }
 
 const MODEL_ID = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?(\[1m\])?$/
 
@@ -39,7 +49,7 @@ export function shortPath(cwd: string, home: string | undefined): string {
 
 export const left = (used: number) => Math.max(0, Math.round(100 - used))
 
-const leftColor = (v: number) => (v <= 20 ? C.red : v <= 50 ? C.yellow : C.green)
+const severity = (v: number) => (v <= 20 ? C.red : v <= 50 ? C.peach : C.green)
 
 export function parseGit(porcelain: string): Omit<Git, 'state'> {
   const git = {
@@ -122,14 +132,30 @@ function gitRuns(g: Git): Run[] {
   return out.length ? [{ text: ' ' }, ...out] : []
 }
 
-// half blocks over two rows: one thick bar, 5h on top of 7d
-export function quotaRows({ fiveLeft, sevenLeft }: Limits): QuotaRow[] {
-  const five = { percent: fiveLeft, color: leftColor(fiveLeft) }
-  const seven = sevenLeft === null ? five : { percent: sevenLeft, color: C.mauve }
+function pill(bg: string, body: Run[]): Run[] {
+  return [{ text: CAP_L, color: bg }, ...body.map(r => ({ color: C.text, ...r, bg })), { text: CAP_R, color: bg }]
+}
+
+const icon = (glyph: string, color: string): Run => ({ text: `${glyph} `, color })
+
+// whole cells: a partial one shows the pill's background between fill and shade
+function meter(pct: number): Run[] {
+  const full = Math.round((Math.min(100, Math.max(0, pct)) / 100) * METER_CELLS)
   return [
-    { fill: '▄', ...five },
-    { fill: '▀', ...seven },
+    { text: '█'.repeat(full), color: severity(pct) },
+    { text: '░'.repeat(METER_CELLS - full), color: C.surface2 },
   ]
+}
+
+function quotaPill(glyph: string, label: string, accent: string, bg: string, pct: number, reset: Run[]): Run[] {
+  return pill(bg, [
+    icon(glyph, accent),
+    { text: `${label} ` },
+    ...meter(pct),
+    { text: ` ${pct}%`, bold: true, color: pct <= 20 ? C.red : C.text },
+    { text: ' left', color: C.overlay1 },
+    ...reset,
+  ])
 }
 
 export type Legend = { quota: Run[][]; cwd: Run[] | null; git: Run[] | null }
@@ -140,20 +166,10 @@ export function legend(line: Line): Legend {
 
   if (line.limits) {
     const { fiveLeft, fiveReset, sevenLeft } = line.limits
-    quota.push([
-      { text: '■', color: leftColor(fiveLeft) },
-      { text: ' 5h ' },
-      { text: `${fiveLeft}%`, bold: true },
-      { text: ' left', dim: true },
-      ...(fiveReset ? [{ text: ` ${STOPWATCH} ${fiveReset}`, dim: true }] : []),
-    ])
+    const reset = fiveReset ? [SEP, icon(HISTORY, C.green), { text: `→ ${fiveReset}`, color: C.overlay1 }] : []
+    quota.push(quotaPill(GAUGE, '5h', C.green, TINT.green, fiveLeft, reset))
     if (sevenLeft !== null) {
-      quota.push([
-        { text: '■', color: C.mauve },
-        { text: ' 7d ' },
-        { text: `${sevenLeft}%`, bold: true },
-        { text: ' left', dim: true },
-      ])
+      quota.push(quotaPill(CALENDAR, '7d', C.mauve, TINT.mauve, sevenLeft, []))
     }
   }
 

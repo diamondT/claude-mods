@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, SessionRateLimit, Settings, Timer } from 'claude-code'
 
 import type { Git, Limits, Line } from '../types'
-import { BAR_EMPTY, left, legend, modelName, parseGit, quotaRows, shortPath } from './line'
+import { left, legend, modelName, parseGit, shortPath } from './line'
 import type { Run } from './line'
 import { addPanel } from './row'
 
@@ -10,7 +10,6 @@ const EMPTY: Line = { model: null, effort: null, limits: null, cwd: null, git: n
 const line = atom({ plugin: 'status-line', key: 'line' } as const, EMPTY)
 
 const REFRESH_MS = 300
-const BAR_CELLS = 500 // wider than any row; clipped to the box
 const GIT = ['git', '--no-optional-locks']
 const MARKERS = [
   ['CHERRY_PICK_HEAD', 'CHERRY-PICK'],
@@ -176,7 +175,7 @@ export const register: Register = on => {
     const { Box, Text } = $.ui.resolve(e)
     const runs = (item: Run[]) =>
       item.map(r => (
-        <Text color={r.color} dimColor={r.dim} bold={r.bold}>
+        <Text color={r.color} backgroundColor={r.bg} dimColor={r.dim} bold={r.bold}>
           {r.text}
         </Text>
       ))
@@ -196,22 +195,6 @@ export const register: Register = on => {
             {s.effort ? <Text dimColor>{` · ${s.effort}`}</Text> : null}
           </Text>
         ) : null}
-        {s.limits
-          ? quotaRows(s.limits).map(row => (
-              <Box height={1} overflow="hidden">
-                {row.percent > 0 ? (
-                  <Box width={`${row.percent}%`} height={1} flexShrink={0} overflow="hidden">
-                    <Text color={row.color}>{row.fill.repeat(BAR_CELLS)}</Text>
-                  </Box>
-                ) : null}
-                {row.percent < 100 ? (
-                  <Box flexGrow={1} height={1} overflow="hidden">
-                    <Text color={BAR_EMPTY}>{row.fill.repeat(BAR_CELLS)}</Text>
-                  </Box>
-                ) : null}
-              </Box>
-            ))
-          : null}
         {l.quota.length > 0 ? (
           <Box flexWrap="wrap" columnGap={2}>
             {l.quota.map(item => (
