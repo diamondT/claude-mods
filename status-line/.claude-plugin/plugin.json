@@ -1,0 +1,9 @@
+{
+  "name": "status-line",
+  "version": "0.1.0",
+  "description": "Model, quota, context, cwd and git status in a line under the prompt.",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "diamondT"
+  }
+}
