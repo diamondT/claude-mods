@@ -1,0 +1,19 @@
+{
+  "name": "claude-mods",
+  "owner": {
+    "name": "diamondT"
+  },
+  "description": "Claude Code mods: context band and status line.",
+  "plugins": [
+    {
+      "name": "context-band",
+      "source": "./context-band",
+      "description": "Live context window breakdown in a band above the prompt."
+    },
+    {
+      "name": "status-line",
+      "source": "./status-line",
+      "description": "Model, quota, context, cwd and git status in a line under the prompt."
+    }
+  ]
+}
