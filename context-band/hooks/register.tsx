@@ -1,13 +1,15 @@
 import { atom, read, update } from 'claude-code'
 import type { Register, SessionUsage, SessionUsageArgs, Timer } from 'claude-code'
 
-import { badgeColor, barRuns, formatTokens, percentOf, toSnapshot } from './snapshot'
+import { addPanel } from './row'
+import { badgeColor, barParts, formatTokens, percentOf, toSnapshot } from './snapshot'
 
 const snapshot = atom({ plugin: 'context-band', key: 'snapshot' } as const, null)
 
 const SUMMARY: SessionUsageArgs = { breakdown: 'summary' }
 const BADGE_TEXT = '#1e1e1e'
 const APPEND_THROTTLE_MS = 750
+const BAR_CELLS = 500 // wider than any row; clipped to the box
 
 const fromUsage = ({ context }: SessionUsage) => (context.breakdown ? toSnapshot(context.breakdown) : null)
 
@@ -58,18 +60,28 @@ export const register: Register = on => {
     return result
   })
 
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
+    const below = await next(e)
     const s = await read($, snapshot)
-    if (e.props.hasSurvey || e.props.view.agentId !== undefined || s === null) {
-      return next(e)
+    if (s === null) {
+      return below
     }
 
     const { Box, Text } = $.ui.resolve(e)
+    const { used, freeColor } = barParts(s)
     const compacts = s.compactsAt === null ? '' : ` · compacts at ${formatTokens(s.compactsAt)}`
 
-    return (
-      <Box borderStyle="round" borderColor="subtle" paddingX={1} flexDirection="column">
-        <Box justifyContent="space-between">
+    const band = (
+      <Box
+        key="context-band"
+        width="50%"
+        flexGrow={1}
+        borderStyle="round"
+        borderColor="subtle"
+        paddingX={1}
+        flexDirection="column"
+      >
+        <Box flexWrap="wrap" justifyContent="space-between" columnGap={1}>
           <Text>
             <Text color="claude">◆</Text> <Text bold>context</Text>
           </Text>
@@ -83,11 +95,16 @@ export const register: Register = on => {
         </Box>
         {/* half blocks over two rows: a full-row bar with half-row margins */}
         {['▄', '▀'].map(fill => (
-          <Text>
-            {barRuns(s, e.props.bodyColumns - 4, fill).map(run => (
-              <Text color={run.color}>{run.text}</Text>
+          <Box height={1} overflow="hidden">
+            {used.map(part => (
+              <Box width={`${part.percent}%`} minWidth={1} height={1} overflow="hidden">
+                <Text color={part.color}>{fill.repeat(BAR_CELLS)}</Text>
+              </Box>
             ))}
-          </Text>
+            <Box flexGrow={1} height={1} overflow="hidden">
+              <Text color={freeColor}>{fill.repeat(BAR_CELLS)}</Text>
+            </Box>
+          </Box>
         ))}
         <Box flexWrap="wrap" columnGap={2}>
           {s.segments.map(seg => (
@@ -101,5 +118,6 @@ export const register: Register = on => {
         </Box>
       </Box>
     )
+    return addPanel(below, band, e.viewport?.columns)
   })
 }

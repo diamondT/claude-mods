@@ -1,8 +1,8 @@
-import type { Git, Line } from '../types'
+import type { Git, Limits, Line } from '../types'
 
 export type Run = { text: string; color?: string; dim?: boolean; bold?: boolean }
 
-export type Mode = { label: string; color: string }
+export type QuotaRow = { fill: string; percent: number; color: string }
 
 // catppuccin mocha
 const C = {
@@ -12,23 +12,12 @@ const C = {
   blue: '#89b4fa',
   mauve: '#cba6f7',
   teal: '#94e2d5',
-  overlay: '#6c7086',
-  subtext: '#a6adc8',
 }
+
+export const BAR_EMPTY = '#3b4252' // context-band's free space
 
 // emoji presentation, so the layout counts the 2 cells the terminal draws
-const PAUSE = '⏸\uFE0F'
 const STOPWATCH = '⏱\uFE0F'
-
-const MODE_HINT = /^([⏵⏸]+)[\uFE0E\uFE0F]?\s*(.+?) on\b/
-const MODE_COLORS: Record<string, string> = {
-  'manual mode': C.subtext,
-  'accept edits': C.mauve,
-  'plan mode': C.teal,
-  'auto mode': C.yellow,
-  'bypass permissions': C.red,
-  "don't ask": C.red,
-}
 
 const MODEL_ID = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?(\[1m\])?$/
 
@@ -48,21 +37,7 @@ export function shortPath(cwd: string, home: string | undefined): string {
   return home && (cwd === home || cwd.startsWith(`${home}/`)) ? `~${cwd.slice(home.length)}` : cwd
 }
 
-export function modeOf(hint: string): Mode | null {
-  const m = MODE_HINT.exec(hint.trim())
-  if (!m) {
-    return null
-  }
-  const [, glyph = '', name = ''] = m
-  return { label: `${glyph === '⏸' ? PAUSE : glyph} ${name} on`, color: MODE_COLORS[name] ?? C.yellow }
-}
-
 export const left = (used: number) => Math.max(0, Math.round(100 - used))
-
-export function bar(pct: number, width = 10): string {
-  const filled = Math.floor((Math.min(100, Math.max(0, pct)) * width) / 100)
-  return '█'.repeat(filled) + '░'.repeat(width - filled)
-}
 
 const leftColor = (v: number) => (v <= 20 ? C.red : v <= 50 ? C.yellow : C.green)
 
@@ -147,34 +122,47 @@ function gitRuns(g: Git): Run[] {
   return out.length ? [{ text: ' ' }, ...out] : []
 }
 
-export function runs(line: Line, mode: Mode | null = null): Run[] {
-  const sections: Run[][] = []
+// half blocks over two rows: one thick bar, 5h on top of 7d
+export function quotaRows({ fiveLeft, sevenLeft }: Limits): QuotaRow[] {
+  const five = { percent: fiveLeft, color: leftColor(fiveLeft) }
+  const seven = sevenLeft === null ? five : { percent: sevenLeft, color: C.mauve }
+  return [
+    { fill: '▄', ...five },
+    { fill: '▀', ...seven },
+  ]
+}
 
-  if (mode) {
-    sections.push([{ text: mode.label, color: mode.color }])
-  }
-
-  if (line.model) {
-    sections.push([{ text: `🧠 ${line.model}${line.effort ? ` ·${line.effort}` : ''}`, dim: true }])
-  }
+// legend rows: quota, then directory and git
+export function legend(line: Line): Run[][][] {
+  const quota: Run[][] = []
+  const place: Run[][] = []
 
   if (line.limits) {
     const { fiveLeft, fiveReset, sevenLeft } = line.limits
-    const reset = fiveReset ? ` ${STOPWATCH} ${fiveReset}` : ''
-    const section: Run[] = [{ text: `🔋 ${bar(fiveLeft)} ${fiveLeft}%${reset}`, color: leftColor(fiveLeft) }]
+    quota.push([
+      { text: '■', color: leftColor(fiveLeft) },
+      { text: ' 5h ' },
+      { text: `${fiveLeft}%`, bold: true },
+      { text: ' left', dim: true },
+      ...(fiveReset ? [{ text: ` ${STOPWATCH} ${fiveReset}`, dim: true }] : []),
+    ])
     if (sevenLeft !== null) {
-      section.push({ text: ' //', color: C.overlay }, { text: ` 7d ${sevenLeft}%`, color: C.teal })
+      quota.push([
+        { text: '■', color: C.mauve },
+        { text: ' 7d ' },
+        { text: `${sevenLeft}%`, bold: true },
+        { text: ' left', dim: true },
+      ])
     }
-    sections.push(section)
   }
 
   if (line.cwd !== null) {
-    sections.push([{ text: `📁 ${line.cwd}`, color: C.blue }])
+    place.push([{ text: line.cwd, color: C.blue }])
   }
 
   if (line.git) {
-    sections.push([{ text: `🌿 ${line.git.branch}`, color: C.mauve }, ...gitRuns(line.git)])
+    place.push([{ text: `🌿 ${line.git.branch}`, color: C.mauve }, ...gitRuns(line.git)])
   }
 
-  return sections.flatMap((section, i) => (i === 0 ? section : [{ text: ' │ ', dim: true }, ...section]))
+  return [quota, place].filter(row => row.length > 0)
 }

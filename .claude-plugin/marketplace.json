@@ -8,12 +8,12 @@
     {
       "name": "context-band",
       "source": "./context-band",
-      "description": "Live context window breakdown in a band above the prompt."
+      "description": "Live context window breakdown in a panel under the prompt hint line."
     },
     {
       "name": "status-line",
       "source": "./status-line",
-      "description": "Model, quota, context, cwd and git status in a line under the prompt."
+      "description": "Model, quota, context, cwd and git status in a panel under the prompt hint line."
     }
   ]
 }

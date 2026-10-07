@@ -2,7 +2,7 @@ import type { SessionContextBreakdown, ThemeKey } from 'claude-code'
 
 import type { Segment, Snapshot } from '../types'
 
-export type Run = { color: string; text: string }
+export type BarPart = { color: string; percent: number }
 
 const LABELS: Record<string, string> = {
   'System prompt': 'system prompt',
@@ -76,29 +76,11 @@ export function toSnapshot(b: SessionContextBreakdown): Snapshot {
   }
 }
 
-export function barRuns(s: Snapshot, width: number, fill: string): Run[] {
-  const w = Math.max(1, width)
-  const cells: Run[] = []
-
-  for (const seg of s.segments) {
-    if (seg.isFree || seg.tokens <= 0) {
-      continue
-    }
-    const n = Math.min(Math.max(1, Math.round((seg.tokens / s.max) * w)), w - cells.length)
-    cells.push(...Array.from({ length: n }, () => ({ color: seg.color, text: fill })))
+export function barParts(s: Snapshot): { used: BarPart[]; freeColor: string } {
+  return {
+    used: s.segments
+      .filter(seg => !seg.isFree && seg.tokens > 0)
+      .map(seg => ({ color: seg.color, percent: percentOf(seg.tokens, s.max) })),
+    freeColor: s.segments.find(seg => seg.isFree)?.color ?? FREE_COLOR,
   }
-
-  const freeColor = s.segments.find(seg => seg.isFree)?.color ?? FREE_COLOR
-  cells.push(...Array.from({ length: w - cells.length }, () => ({ color: freeColor, text: fill })))
-
-  const runs: Run[] = []
-  for (const cell of cells) {
-    const last = runs.at(-1)
-    if (last?.color === cell.color) {
-      last.text += cell.text
-    } else {
-      runs.push({ ...cell })
-    }
-  }
-  return runs
 }

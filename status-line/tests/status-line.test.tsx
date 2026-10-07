@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { ProcessRunResult, SessionUsage } from 'claude-code'
 
-import { bar, modelName, modeOf, parseGit, runs, shortPath } from '../hooks/line'
+import { legend, modelName, parseGit, quotaRows, shortPath } from '../hooks/line'
 
 const PORCELAIN = [
   '# branch.oid 0123456789abcdef',
@@ -56,26 +56,6 @@ describe('helpers', () => {
     expect(shortPath('/srv', undefined)).toBe('/srv')
   })
 
-  test('takes the mode out of the engine hint', () => {
-    expect(modeOf('⏵⏵ auto mode on (shift+tab to cycle) · ← for agents')).toEqual({
-      label: '⏵⏵ auto mode on',
-      color: '#e5c890',
-    })
-    expect(modeOf('⏸ plan mode on (shift+tab to cycle)')).toEqual({ label: '⏸\uFE0F plan mode on', color: '#94e2d5' })
-    expect(modeOf('⏸ manual mode on (shift+tab to cycle)')).toEqual({
-      label: '⏸\uFE0F manual mode on',
-      color: '#a6adc8',
-    })
-    expect(modeOf('⏵⏵ accept edits on · esc to interrupt')).toEqual({ label: '⏵⏵ accept edits on', color: '#cba6f7' })
-    expect(modeOf('? for shortcuts')).toBe(null)
-  })
-
-  test('draws bars', () => {
-    expect(bar(0)).toBe('░░░░░░░░░░')
-    expect(bar(64)).toBe('██████░░░░')
-    expect(bar(100)).toBe('██████████')
-  })
-
   test('counts git status as starship did', () => {
     expect(parseGit(PORCELAIN)).toEqual({
       branch: 'main',
@@ -92,30 +72,37 @@ describe('helpers', () => {
     expect(parseGit('# branch.oid 0123456789abcdef\n# branch.head (detached)').branch).toBe('0123456')
   })
 
-  test('joins sections in order, skipping what is unknown', () => {
-    const text = runs({
+  test('lists the legend in rows, skipping what is unknown', () => {
+    const text = legend({
       model: 'Opus 5.5',
       effort: 'xhigh',
       limits: { fiveLeft: 64, fiveReset: '18:00', sevenLeft: 42 },
       cwd: '~/dev',
       git: { ...parseGit(PORCELAIN), state: 'REBASE 2/5' },
-    })
-      .map(r => r.text)
-      .join('')
+    }).map(row => row.map(item => item.map(r => r.text).join('')))
 
-    expect(text).toBe(
-      '🧠 Opus 5.5 ·xhigh │ 🔋 ██████░░░░ 64% ⏱\uFE0F 18:00 // 7d 42% │ 📁 ~/dev' +
-        ' │ 🌿 main REBASE 2/5 ⇡2⇣1~1≡3✘1»1!2+2?2',
-    )
-    expect(runs({ model: null, effort: null, limits: null, cwd: '/srv', git: null })).toEqual([
-      { text: '📁 /srv', color: '#89b4fa' },
+    expect(text).toEqual([
+      ['■ 5h 64% left ⏱\uFE0F 18:00', '■ 7d 42% left'],
+      ['~/dev', '🌿 main REBASE 2/5 ⇡2⇣1~1≡3✘1»1!2+2?2'],
     ])
-    expect(runs({ model: null, effort: null, limits: null, cwd: '/srv', git: null }, { label: 'm', color: 'warning' })[0])
-      .toEqual({ text: 'm', color: 'warning' })
+    expect(legend({ model: 'Opus 5.5', effort: null, limits: null, cwd: '/srv', git: null })).toEqual([
+      [[{ text: '/srv', color: '#89b4fa' }]],
+    ])
+  })
+
+  test('stacks 5h over 7d in the bar', () => {
+    expect(quotaRows({ fiveLeft: 64, fiveReset: null, sevenLeft: 42 })).toEqual([
+      { fill: '▄', percent: 64, color: '#a6e3a1' },
+      { fill: '▀', percent: 42, color: '#cba6f7' },
+    ])
+    expect(quotaRows({ fiveLeft: 15, fiveReset: null, sevenLeft: null })).toEqual([
+      { fill: '▄', percent: 15, color: '#f38ba8' },
+      { fill: '▀', percent: 15, color: '#f38ba8' },
+    ])
   })
 })
 
-test('draws one line in place of the engine hint, mode first', async ($, on) => {
+test('draws a box in place of the engine hint', async ($, on) => {
   mock.env(on, { HOME: '/home/me' })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
@@ -132,10 +119,7 @@ test('draws one line in place of the engine hint, mode first', async ($, on) => 
     }
     return { value: ran(args.includes('status') ? PORCELAIN : '/home/me/dev/.git\n') }
   })
-  on('ui.render', { component: 'PromptHint' }, ($, e) => {
-    const { Box } = $.ui.resolve(e)
-    return <Box key="engine" />
-  })
+  on('ui.render', { component: 'PromptHint' }, () => ({ type: 'engine', ref: 1 }))
 
   await $.session.start({ cwd: '/home/me/dev', surface: 'terminal', isInteractive: true })
 
@@ -143,18 +127,26 @@ test('draws one line in place of the engine hint, mode first', async ($, on) => 
     const ui = await $.ui.mount({
       plugin: 'status-line',
       surface,
-      ...hintProps('⏵⏵ auto mode on (shift+tab to cycle) · ← for agents'),
+      ...hintProps('(shift+tab to cycle) · ← for agents'),
     })
 
-    expect((await ui.find({ type: 'Text', text: /^⏵⏵ auto mode on$/ }))?.props.color).toBe('#e5c890')
     expect(await ui.find({ type: 'Text', text: /for agents|shift\+tab/ })).toBeUndefined()
-    expect(await ui.find({ type: 'Text', text: '🧠 Opus 5.5 ·xhigh' })).toBeDefined()
-    expect((await ui.find({ type: 'Text', text: /^🔋 ██████░░░░ 64% ⏱\uFE0F 18:00$/ }))?.props.color).toBe('#a6e3a1')
-    expect(await ui.find({ type: 'Text', text: /^ 7d 42%$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /📊/ })).toBeUndefined()
-    expect(await ui.find({ type: 'Text', text: /^📁 ~\/dev$/ })).toBeDefined()
+    // 80 less the engine's padding (4)
+    expect(await ui.drawn()).toMatchObject({
+      props: { key: 'prompt-row' },
+      children: [{ props: { key: 'prompt-row:panels', width: 76 } }, { type: 'engine', ref: 1 }],
+    })
+    expect((await ui.find({ key: 'status-line' }))?.props).toMatchObject({ borderStyle: 'round', width: '50%' })
+    expect(await ui.find({ type: 'Text', text: 'Opus 5.5' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: ' · xhigh' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /│/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /^■ 5h 64% left ⏱\uFE0F 18:00$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^■ 7d 42% left$/ })).toBeDefined()
+    const drawn = JSON.stringify(await ui.drawn())
+    expect(drawn).toContain('"width":"64%"')
+    expect(drawn).toContain('"width":"42%"')
+    expect(await ui.find({ type: 'Text', text: /^~\/dev$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^🌿 main$/ })).toBeDefined()
-    expect(await ui.find({ key: 'engine' })).toBeUndefined()
     await ui.unmount()
   }
 })
@@ -174,7 +166,7 @@ test('follows the model of the main loop', async ($, on) => {
 
   await $.session.start({ cwd: '/srv', surface: 'terminal', isInteractive: true })
   const before = await $.ui.mount({ plugin: 'status-line', surface: 'terminal', ...HINT })
-  expect(await before.find({ type: 'Text', text: '🧠 Opus' })).toBeDefined()
+  expect(await before.find({ type: 'Text', text: 'Opus' })).toBeDefined()
   expect(await before.find({ type: 'Text', text: /🌿/ })).toBeUndefined()
   expect(await before.find({ type: 'Text', text: /for shortcuts/ })).toBeUndefined()
   await before.unmount()
@@ -186,7 +178,7 @@ test('follows the model of the main loop', async ($, on) => {
     source: 'command',
   } as never)
   const after = await $.ui.mount({ plugin: 'status-line', surface: 'terminal', ...HINT })
-  expect(await after.find({ type: 'Text', text: '🧠 Haiku 4.5' })).toBeDefined()
+  expect(await after.find({ type: 'Text', text: 'Haiku 4.5' })).toBeDefined()
   await after.unmount()
 })
 
@@ -220,6 +212,41 @@ test('reads the reset time with BSD date where GNU date fails', async ($, on) =>
     ['date', '-d', '@1791390600', '+%H:%M'],
     ['date', '-r', '1791390600', '+%H:%M'],
   ])
-  expect(await ui.find({ type: 'Text', text: /^🔋 ██████░░░░ 64% ⏱️ 19:30$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: ' ⏱️ 19:30' })).toBeDefined()
   await ui.unmount()
+})
+
+test("goes first in context-band's row", async ($, on) => {
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('session.model', () => ({ value: 'claude-opus-5-5' }))
+  on('settings.read', () => ({ value: {} }))
+  on('session.usage', () => ({ value: { ...usage, rateLimits: [] } }))
+  on('session.cwd', () => ({ value: '/srv' }))
+  on('process.run', () => ({ value: ran('', 128) }))
+  on('ui.render', { component: 'PromptHint' }, ($, e) => {
+    const { Box, Text } = $.ui.resolve(e)
+    return (
+      <Box key="prompt-row" flexDirection="column">
+        <Box key="prompt-row:panels" width={76} columnGap={1}>
+          <Box key="context-band">
+            <Text>band</Text>
+          </Box>
+        </Box>
+        <Box key="engine" />
+      </Box>
+    )
+  })
+
+  await $.session.start({ cwd: '/srv', surface: 'terminal', isInteractive: true })
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'status-line', surface, ...HINT })
+
+    expect(await ui.find({ key: 'engine' })).toBeDefined()
+    expect((await ui.find({ key: 'prompt-row:panels' }))?.children).toMatchObject([
+      { props: { key: 'status-line' } },
+      { props: { key: 'context-band' } },
+    ])
+    await ui.unmount()
+  }
 })

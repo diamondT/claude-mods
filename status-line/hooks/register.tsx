@@ -2,12 +2,14 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, SessionRateLimit, Settings, Timer } from 'claude-code'
 
 import type { Git, Limits, Line } from '../types'
-import { left, modelName, modeOf, parseGit, runs, shortPath } from './line'
+import { BAR_EMPTY, left, legend, modelName, parseGit, quotaRows, shortPath } from './line'
+import { addPanel } from './row'
 
 const EMPTY: Line = { model: null, effort: null, limits: null, cwd: null, git: null }
 const line = atom({ plugin: 'status-line', key: 'line' } as const, EMPTY)
 
 const REFRESH_MS = 300
+const BAR_CELLS = 500 // wider than any row; clipped to the box
 const GIT = ['git', '--no-optional-locks']
 const MARKERS = [
   ['CHERRY_PICK_HEAD', 'CHERRY-PICK'],
@@ -163,22 +165,61 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
-    const parts = runs(await read($, line), modeOf(e.props.hint))
-    if (parts.length === 0) {
-      return next(e)
+    const below = await next(e)
+    const s = await read($, line)
+    const rows = legend(s)
+    if (!s.model && rows.length === 0) {
+      return below
     }
 
-    const { Text } = $.ui.resolve(e)
-
-    // replaces the engine's hint row; only its mode is kept
-    return (
-      <Text wrap="truncate-end">
-        {parts.map(r => (
-          <Text color={r.color} dimColor={r.dim} bold={r.bold}>
-            {r.text}
+    const { Box, Text } = $.ui.resolve(e)
+    const mine = (
+      <Box
+        key="status-line"
+        width="50%"
+        flexGrow={1}
+        borderStyle="round"
+        borderColor="subtle"
+        paddingX={1}
+        flexDirection="column"
+      >
+        {s.model ? (
+          <Text>
+            <Text bold>{s.model}</Text>
+            {s.effort ? <Text dimColor>{` · ${s.effort}`}</Text> : null}
           </Text>
+        ) : null}
+        {s.limits
+          ? quotaRows(s.limits).map(row => (
+              <Box height={1} overflow="hidden">
+                {row.percent > 0 ? (
+                  <Box width={`${row.percent}%`} height={1} flexShrink={0} overflow="hidden">
+                    <Text color={row.color}>{row.fill.repeat(BAR_CELLS)}</Text>
+                  </Box>
+                ) : null}
+                {row.percent < 100 ? (
+                  <Box flexGrow={1} height={1} overflow="hidden">
+                    <Text color={BAR_EMPTY}>{row.fill.repeat(BAR_CELLS)}</Text>
+                  </Box>
+                ) : null}
+              </Box>
+            ))
+          : null}
+        {rows.map(row => (
+          <Box flexWrap="wrap" columnGap={2}>
+            {row.map(item => (
+              <Text>
+                {item.map(r => (
+                  <Text color={r.color} dimColor={r.dim} bold={r.bold}>
+                    {r.text}
+                  </Text>
+                ))}
+              </Text>
+            ))}
+          </Box>
         ))}
-      </Text>
+      </Box>
     )
+    return addPanel(below, mine, e.viewport?.columns, true)
   })
 }

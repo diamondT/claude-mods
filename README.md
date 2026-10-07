@@ -4,8 +4,10 @@ Claude Code mods (function-hook plugins).
 
 | Mod | What it does |
 | --- | --- |
-| [`context-band`](./context-band) | Live context window breakdown (per category bar + legend) in a band above the prompt. |
-| [`status-line`](./status-line) | Replaces the prompt hint row with permission mode, model + effort, 5h/7d quota, cwd and git status. |
+| [`context-band`](./context-band) | Live context window breakdown (per category bar + legend) in a panel under Claude Code's hint line. |
+| [`status-line`](./status-line) | Model + effort, 5h/7d quota, cwd and git status in a panel under Claude Code's hint line. |
+
+Installed together, the two panels share one row, half width each.
 
 ## Install
 

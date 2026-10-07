@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { ContextCategory, SessionContextBreakdown, SessionUsage } from 'claude-code'
 
-import { badgeColor, barRuns, formatTokens, percentOf, toSnapshot } from '../hooks/snapshot'
+import { badgeColor, barParts, formatTokens, percentOf, toSnapshot } from '../hooks/snapshot'
 
 const category = (name: string, tokens: number, kind: ContextCategory['kind'] = 'used'): ContextCategory => ({
   name,
@@ -45,16 +45,10 @@ const usage: SessionUsage = {
   rateLimits: [],
 }
 
-const BAND = {
-  component: 'AbovePrompt',
-  props: {
-    hasSurvey: false,
-    isWorking: false,
-    maxRows: 20,
-    bodyColumns: 100,
-    scroll: { offset: 0, bodyRows: 20 },
-    view: {},
-  },
+const HINT = {
+  component: 'PromptHint',
+  props: { isDraft: false, isWorking: false, hint: '? for shortcuts' },
+  viewport: { columns: 120, rows: 40 },
 } as const
 
 describe('helpers', () => {
@@ -113,57 +107,59 @@ describe('helpers', () => {
     expect(at(937_650)).toBe('error')
   })
 
-  test('fills the bar to its width', () => {
-    const runs = barRuns(toSnapshot(breakdown), 100, '▄')
-    const cells = runs.map(r => r.text).join('')
-
-    expect([...cells]).toHaveLength(100)
-    expect(cells).not.toContain('│')
-    expect(runs.find(r => r.color === '#5b84b1')?.text).toBe('▄')
-    expect(runs.some(r => r.color === '#d9693f')).toBe(false)
+  test('splits the bar by share of the window, free last', () => {
+    expect(barParts(toSnapshot(breakdown))).toEqual({
+      used: [
+        { color: '#5b84b1', percent: 1 },
+        { color: '#5fb3b3', percent: 2 },
+        { color: '#9b7fe6', percent: 5 },
+        { color: '#8fc66b', percent: 1 },
+        { color: '#e5c06b', percent: 1 },
+        { color: '#e79bb8', percent: 1 },
+      ],
+      freeColor: '#3b4252',
+    })
   })
 })
 
-test('draws the band from the measured breakdown', async ($, on) => {
+test('draws the band in a row under the engine hint, from the measured breakdown', async ($, on) => {
   on('session.usage', () => ({ value: usage }))
   on('session.measure', (_$, e) => ({ changed: e.changed }))
-  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
-    const { Box } = $.ui.resolve(e)
-    return <Box key="engine" />
-  })
+  on('ui.render', { component: 'PromptHint' }, () => ({ type: 'engine', ref: 1 }))
 
   await $.session.measure({ context: usage.context, rateLimits: [], changed: ['context'] })
 
   for (const surface of ['terminal', 'desktop'] as const) {
-    const ui = await $.ui.mount({ plugin: 'context-band', surface, ...BAND })
+    const ui = await $.ui.mount({ plugin: 'context-band', surface, ...HINT })
 
+    // the engine's drawing stays unsized, beside the panels; 120 less the engine's padding (4)
+    expect(await ui.drawn()).toMatchObject({
+      type: 'Box',
+      props: { key: 'prompt-row' },
+      children: [{ type: 'Box', props: { key: 'prompt-row:panels', width: 116 } }, { type: 'engine', ref: 1 }],
+    })
+    expect((await ui.find({ key: 'context-band' }))?.props).toMatchObject({ width: '50%', flexGrow: 1 })
+    expect(JSON.stringify(await ui.drawn())).toContain('"width":"5%"')
     expect(await ui.find({ type: 'Text', text: /^90k$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: / of 1M · compacts at 987k / })).toBeDefined()
     expect((await ui.find({ type: 'Text', text: /^ 9% $/ }))?.props.backgroundColor).toBe('success')
     expect(await ui.find({ type: 'Text', text: / mcp tools 52k/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: / free 897k$/ })).toBeDefined()
-    expect(await ui.find({ key: 'engine' })).toBeUndefined()
     await ui.unmount()
   }
 })
 
-test('yields the band to a survey and to a subagent view', async ($, on) => {
-  on('session.usage', () => ({ value: usage }))
-  on('session.measure', (_$, e) => ({ changed: e.changed }))
-  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
+test('leaves the hint alone until measured', async ($, on) => {
+  on('ui.render', { component: 'PromptHint' }, ($, e) => {
     const { Box } = $.ui.resolve(e)
     return <Box key="engine" />
   })
 
-  await $.session.measure({ context: usage.context, rateLimits: [], changed: ['context'] })
-
   for (const surface of ['terminal', 'desktop'] as const) {
-    for (const props of [{ ...BAND.props, hasSurvey: true }, { ...BAND.props, view: { agentId: 'a1' } }]) {
-      const ui = await $.ui.mount({ plugin: 'context-band', surface, component: 'AbovePrompt', props })
+    const ui = await $.ui.mount({ plugin: 'context-band', surface, ...HINT })
 
-      expect(await ui.find({ key: 'engine' })).toBeDefined()
-      await ui.unmount()
-    }
+    expect(await ui.drawn()).toMatchObject({ type: 'Box', props: { key: 'engine' } })
+    await ui.unmount()
   }
 })
 
@@ -176,7 +172,7 @@ test('refreshes once per throttle window as rows are appended', async ($, on) =>
   })
   // kit has no store beneath session.append; only a note row may be answered without next
   on('session.append', () => ({ deny: 'kept by the test' }))
-  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
+  on('ui.render', { component: 'PromptHint' }, ($, e) => {
     const { Box } = $.ui.resolve(e)
     return <Box key="engine" />
   })
@@ -194,7 +190,7 @@ test('refreshes once per throttle window as rows are appended', async ($, on) =>
   await clock.advance(750)
   expect(calls).toBe(1)
 
-  const ui = await $.ui.mount({ plugin: 'context-band', surface: 'terminal', ...BAND })
-  expect(await ui.find({ key: 'engine' })).toBeUndefined()
+  const ui = await $.ui.mount({ plugin: 'context-band', surface: 'terminal', ...HINT })
+  expect(await ui.find({ key: 'context-band' })).toBeDefined()
   await ui.unmount()
 })
