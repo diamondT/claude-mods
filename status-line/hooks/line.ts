@@ -132,10 +132,11 @@ export function quotaRows({ fiveLeft, sevenLeft }: Limits): QuotaRow[] {
   ]
 }
 
-// legend rows: quota, then directory and git
-export function legend(line: Line): Run[][][] {
+export type Legend = { quota: Run[][]; cwd: Run[] | null; git: Run[] | null }
+
+// legend items: quota row, then directory and git row
+export function legend(line: Line): Legend {
   const quota: Run[][] = []
-  const place: Run[][] = []
 
   if (line.limits) {
     const { fiveLeft, fiveReset, sevenLeft } = line.limits
@@ -156,13 +157,9 @@ export function legend(line: Line): Run[][][] {
     }
   }
 
-  if (line.cwd !== null) {
-    place.push([{ text: line.cwd, color: C.blue }])
+  return {
+    quota,
+    cwd: line.cwd === null ? null : [{ text: line.cwd, color: C.blue }],
+    git: line.git ? [{ text: `🌿 ${line.git.branch}`, color: C.mauve }, ...gitRuns(line.git)] : null,
   }
-
-  if (line.git) {
-    place.push([{ text: `🌿 ${line.git.branch}`, color: C.mauve }, ...gitRuns(line.git)])
-  }
-
-  return [quota, place].filter(row => row.length > 0)
 }

@@ -10,6 +10,8 @@ const SUMMARY: SessionUsageArgs = { breakdown: 'summary' }
 const BADGE_TEXT = '#1e1e1e'
 const APPEND_THROTTLE_MS = 750
 const BAR_CELLS = 500 // wider than any row; clipped to the box
+const PANE = 'context'
+const DETAILS = 'context-band:details'
 
 const fromUsage = ({ context }: SessionUsage) => (context.breakdown ? toSnapshot(context.breakdown) : null)
 
@@ -67,9 +69,18 @@ export const register: Register = on => {
       return below
     }
 
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
     const { used, freeColor } = barParts(s)
     const compacts = s.compactsAt === null ? '' : ` · compacts at ${formatTokens(s.compactsAt)}`
+    const half = Math.ceil(s.segments.length / 2)
+    const legend = [s.segments.slice(0, half), s.segments.slice(half)].filter(line => line.length > 0)
+    const toggle = async () => {
+      if ((await $.ui.panes()).some(p => p.id === PANE)) {
+        await $.ui.close({ id: PANE })
+      } else {
+        await $.ui.open({ id: PANE, title: 'Context', focus: true, closeOnEscape: true, rows: s.segments.length })
+      }
+    }
 
     const band = (
       <Box
@@ -85,13 +96,16 @@ export const register: Register = on => {
           <Text>
             <Text color="claude">◆</Text> <Text bold>context</Text>
           </Text>
-          <Text>
-            <Text bold>{formatTokens(s.total)}</Text>
-            <Text dimColor>{` of ${formatTokens(s.max)}${compacts} `}</Text>
-            <Text backgroundColor={badgeColor(s)} color={BADGE_TEXT} bold>
-              {` ${s.percent}% `}
+          <Box columnGap={1}>
+            <Text>
+              <Text bold>{formatTokens(s.total)}</Text>
+              <Text dimColor>{` of ${formatTokens(s.max)}${compacts} `}</Text>
+              <Text backgroundColor={badgeColor(s)} color={BADGE_TEXT} bold>
+                {` ${s.percent}% `}
+              </Text>
             </Text>
-          </Text>
+            <Button key={DETAILS} label="⋯" plain dimColor onPress={toggle} />
+          </Box>
         </Box>
         {/* half blocks over two rows: a full-row bar with half-row margins */}
         {['▄', '▀'].map(fill => (
@@ -106,18 +120,50 @@ export const register: Register = on => {
             </Box>
           </Box>
         ))}
-        <Box flexWrap="wrap" columnGap={2}>
-          {s.segments.map(seg => (
-            <Text>
-              <Text color={seg.color}>■</Text>
-              {` ${seg.label} `}
-              <Text bold>{formatTokens(seg.tokens)}</Text>
-              {seg.isFree ? null : <Text dimColor>{` ${percentOf(seg.tokens, s.max)}%`}</Text>}
-            </Text>
-          ))}
-        </Box>
+        {legend.map(line => (
+          <Text wrap="truncate-end">
+            {line.map((seg, i) => (
+              <Text>
+                {i > 0 ? '  ' : ''}
+                <Text color={seg.color}>■</Text>
+                {` ${seg.label} `}
+                <Text bold>{formatTokens(seg.tokens)}</Text>
+                {seg.isFree ? null : <Text dimColor>{` ${percentOf(seg.tokens, s.max)}%`}</Text>}
+              </Text>
+            ))}
+          </Text>
+        ))}
       </Box>
     )
     return addPanel(below, band)
+  })
+
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const { Box, Text } = $.ui.resolve(e)
+    const s = await read($, snapshot)
+    if (s === null) {
+      return <Text dimColor>Not measured yet.</Text>
+    }
+
+    return (
+      <Box flexDirection="column" paddingX={1}>
+        {s.segments.map(seg => (
+          <Box columnGap={1}>
+            <Box flexGrow={1}>
+              <Text wrap="truncate-end">
+                <Text color={seg.color}>■</Text>
+                {` ${seg.label}`}
+              </Text>
+            </Box>
+            <Box width={4} justifyContent="flex-end">
+              <Text bold>{formatTokens(seg.tokens)}</Text>
+            </Box>
+            <Box width={4} justifyContent="flex-end">
+              <Text dimColor>{seg.isFree ? '' : `${percentOf(seg.tokens, s.max)}%`}</Text>
+            </Box>
+          </Box>
+        ))}
+      </Box>
+    )
   })
 }

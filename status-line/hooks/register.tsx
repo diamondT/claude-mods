@@ -3,6 +3,7 @@ import type { EngineInterface, Register, SessionRateLimit, Settings, Timer } fro
 
 import type { Git, Limits, Line } from '../types'
 import { BAR_EMPTY, left, legend, modelName, parseGit, quotaRows, shortPath } from './line'
+import type { Run } from './line'
 import { addPanel } from './row'
 
 const EMPTY: Line = { model: null, effort: null, limits: null, cwd: null, git: null }
@@ -167,12 +168,18 @@ export const register: Register = on => {
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     const below = await next(e)
     const s = await read($, line)
-    const rows = legend(s)
-    if (!s.model && rows.length === 0) {
+    const l = legend(s)
+    if (!s.model && l.quota.length === 0 && !l.cwd && !l.git) {
       return below
     }
 
     const { Box, Text } = $.ui.resolve(e)
+    const runs = (item: Run[]) =>
+      item.map(r => (
+        <Text color={r.color} dimColor={r.dim} bold={r.bold}>
+          {r.text}
+        </Text>
+      ))
     const mine = (
       <Box
         key="status-line"
@@ -205,19 +212,26 @@ export const register: Register = on => {
               </Box>
             ))
           : null}
-        {rows.map(row => (
+        {l.quota.length > 0 ? (
           <Box flexWrap="wrap" columnGap={2}>
-            {row.map(item => (
-              <Text>
-                {item.map(r => (
-                  <Text color={r.color} dimColor={r.dim} bold={r.bold}>
-                    {r.text}
-                  </Text>
-                ))}
-              </Text>
+            {l.quota.map(item => (
+              <Text>{runs(item)}</Text>
             ))}
           </Box>
-        ))}
+        ) : null}
+        {l.cwd || l.git ? (
+          <Box>
+            {l.cwd ? (
+              <Box flexShrink={1}>
+                <Text wrap="truncate-start">{runs(l.cwd)}</Text>
+              </Box>
+            ) : null}
+            {/* holds half the row, so cwd gets at most the other half */}
+            <Box minWidth="50%" flexShrink={0} paddingLeft={l.cwd ? 2 : 0}>
+              {l.git ? <Text>{runs(l.git)}</Text> : null}
+            </Box>
+          </Box>
+        ) : null}
       </Box>
     )
     return addPanel(below, mine, true)

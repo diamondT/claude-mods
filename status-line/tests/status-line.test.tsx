@@ -2,6 +2,7 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 import type { ProcessRunResult, SessionUsage } from 'claude-code'
 
 import { legend, modelName, parseGit, quotaRows, shortPath } from '../hooks/line'
+import type { Run } from '../hooks/line'
 
 const PORCELAIN = [
   '# branch.oid 0123456789abcdef',
@@ -73,21 +74,23 @@ describe('helpers', () => {
   })
 
   test('lists the legend in rows, skipping what is unknown', () => {
-    const text = legend({
+    const { quota, cwd, git } = legend({
       model: 'Opus 5.5',
       effort: 'xhigh',
       limits: { fiveLeft: 64, fiveReset: '18:00', sevenLeft: 42 },
       cwd: '~/dev',
       git: { ...parseGit(PORCELAIN), state: 'REBASE 2/5' },
-    }).map(row => row.map(item => item.map(r => r.text).join('')))
+    })
+    const text = (item: Run[] | null) => item?.map(r => r.text).join('')
 
-    expect(text).toEqual([
-      ['■ 5h 64% left ⏱\uFE0F 18:00', '■ 7d 42% left'],
-      ['~/dev', '🌿 main REBASE 2/5 ⇡2⇣1~1≡3✘1»1!2+2?2'],
-    ])
-    expect(legend({ model: 'Opus 5.5', effort: null, limits: null, cwd: '/srv', git: null })).toEqual([
-      [[{ text: '/srv', color: '#89b4fa' }]],
-    ])
+    expect(quota.map(text)).toEqual(['■ 5h 64% left ⏱\uFE0F 18:00', '■ 7d 42% left'])
+    expect(text(cwd)).toBe('~/dev')
+    expect(text(git)).toBe('🌿 main REBASE 2/5 ⇡2⇣1~1≡3✘1»1!2+2?2')
+    expect(legend({ model: 'Opus 5.5', effort: null, limits: null, cwd: '/srv', git: null })).toEqual({
+      quota: [],
+      cwd: [{ text: '/srv', color: '#89b4fa' }],
+      git: null,
+    })
   })
 
   test('stacks 5h over 7d in the bar', () => {
@@ -146,7 +149,8 @@ test('draws a box in place of the engine hint', async ($, on) => {
     const drawn = JSON.stringify(await ui.drawn())
     expect(drawn).toContain('"width":"64%"')
     expect(drawn).toContain('"width":"42%"')
-    expect(await ui.find({ type: 'Text', text: /^~\/dev$/ })).toBeDefined()
+    expect((await ui.find({ type: 'Text', text: /^~\/dev$/ }))?.props).toMatchObject({ wrap: 'truncate-start' })
+    expect(drawn).toContain('"minWidth":"50%"')
     expect(await ui.find({ type: 'Text', text: /^🌿 main$/ })).toBeDefined()
     await ui.unmount()
   }

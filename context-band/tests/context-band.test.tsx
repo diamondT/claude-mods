@@ -146,8 +146,60 @@ test('draws the band in a row under the engine hint, from the measured breakdown
     expect((await ui.find({ type: 'Text', text: /^ 9% $/ }))?.props.backgroundColor).toBe('success')
     expect(await ui.find({ type: 'Text', text: / mcp tools 52k/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: / free 897k$/ })).toBeDefined()
+    const legend = (await ui.findAll({ type: 'Text' })).filter(t => t.props.wrap === 'truncate-end')
+    expect(legend.map(t => t.text)).toEqual([
+      '■ system prompt 4.2k 1%  ■ tools 17k 2%  ■ mcp tools 52k 5%  ■ agents 3.4k 1%',
+      '■ memory files 8.6k 1%  ■ skills 5.1k 1%  ■ messages 0 0%  ■ free 897k',
+    ])
     await ui.unmount()
   }
+})
+
+test('the ⋯ button toggles a pane listing every category', async ($, on) => {
+  const opened: string[] = []
+  on('session.usage', () => ({ value: usage }))
+  on('session.measure', (_$, e) => ({ changed: e.changed }))
+  on('ui.render', { component: 'PromptHint' }, () => ({ type: 'engine', ref: 1 }))
+  on('ui.panes', () => ({
+    value: opened.map(id => ({ id, title: id, isShown: true, isFocused: false, isPlaced: true })),
+  }))
+  on('ui.open', (_$, e) => {
+    opened.push(e.id)
+    return { value: { isPlaced: true } }
+  })
+  on('ui.close', (_$, e) => {
+    opened.splice(opened.indexOf(e.id), 1)
+    return { value: undefined }
+  })
+
+  await $.session.measure({ context: usage.context, rateLimits: [], changed: ['context'] })
+
+  const band = await $.ui.mount({ plugin: 'context-band', surface: 'terminal', ...HINT })
+  await band.press({ key: 'context-band:details' })
+  expect(opened).toEqual(['context'])
+
+  const pane = await $.ui.mount({
+    plugin: 'context-band',
+    surface: 'terminal',
+    component: 'Pane',
+    requestId: 'context',
+    props: {
+      title: 'Context',
+      isFocused: true,
+      bodyColumns: 40,
+      placement: 'inline',
+      scroll: { offset: 0, bodyRows: 10 },
+      view: {},
+    },
+  })
+  expect(await pane.find({ type: 'Text', text: /^■ messages$/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /^■ free$/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /^897k$/ })).toBeDefined()
+  await pane.unmount()
+
+  await band.press({ key: 'context-band:details' })
+  expect(opened).toEqual([])
+  await band.unmount()
 })
 
 test('leaves the hint alone until measured', async ($, on) => {
