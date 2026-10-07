@@ -3,7 +3,7 @@
   "owner": {
     "name": "diamondT"
   },
-  "description": "Claude Code mods: context band and status line.",
+  "description": "Claude Code mods: context band, status line and agents panel.",
   "plugins": [
     {
       "name": "context-band",
@@ -14,6 +14,11 @@
       "name": "status-line",
       "source": "./status-line",
       "description": "Model, quota, context, cwd and git status in a panel under the prompt hint line."
+    },
+    {
+      "name": "agents-panel",
+      "source": "./agents-panel",
+      "description": "Running subagents, their latest tool call and a timeline in a side panel."
     }
   ]
 }

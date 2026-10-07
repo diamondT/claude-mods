@@ -131,11 +131,12 @@ test('draws a box in place of the engine hint', async ($, on) => {
     })
 
     expect(await ui.find({ type: 'Text', text: /for agents|shift\+tab/ })).toBeUndefined()
-    // 80 less the engine's padding (4)
+    // grows to the hint row, not the viewport: narrower beside a docked pane
     expect(await ui.drawn()).toMatchObject({
-      props: { key: 'prompt-row' },
-      children: [{ props: { key: 'prompt-row:panels', width: 76 } }, { type: 'engine', ref: 1 }],
+      props: { key: 'prompt-row', flexGrow: 1 },
+      children: [{ props: { key: 'prompt-row:panels' } }, { type: 'engine', ref: 1 }],
     })
+    expect((await ui.find({ key: 'prompt-row:panels' }))?.props.width).toBeUndefined()
     expect((await ui.find({ key: 'status-line' }))?.props).toMatchObject({ borderStyle: 'round', width: '50%' })
     expect(await ui.find({ type: 'Text', text: 'Opus 5.5' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: ' · xhigh' })).toBeDefined()
@@ -227,7 +228,7 @@ test("goes first in context-band's row", async ($, on) => {
     const { Box, Text } = $.ui.resolve(e)
     return (
       <Box key="prompt-row" flexDirection="column">
-        <Box key="prompt-row:panels" width={76} columnGap={1}>
+        <Box key="prompt-row:panels" columnGap={1}>
           <Box key="context-band">
             <Text>band</Text>
           </Box>

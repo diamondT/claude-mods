@@ -118,6 +118,6 @@ export const register: Register = on => {
         </Box>
       </Box>
     )
-    return addPanel(below, band, e.viewport?.columns)
+    return addPanel(below, band)
   })
 }

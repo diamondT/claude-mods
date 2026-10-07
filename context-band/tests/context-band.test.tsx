@@ -132,12 +132,13 @@ test('draws the band in a row under the engine hint, from the measured breakdown
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'context-band', surface, ...HINT })
 
-    // the engine's drawing stays unsized, beside the panels; 120 less the engine's padding (4)
+    // the engine's drawing stays beside the panels; the row grows to the hint row, not the viewport
     expect(await ui.drawn()).toMatchObject({
       type: 'Box',
-      props: { key: 'prompt-row' },
-      children: [{ type: 'Box', props: { key: 'prompt-row:panels', width: 116 } }, { type: 'engine', ref: 1 }],
+      props: { key: 'prompt-row', flexGrow: 1 },
+      children: [{ type: 'Box', props: { key: 'prompt-row:panels' } }, { type: 'engine', ref: 1 }],
     })
+    expect((await ui.find({ key: 'prompt-row:panels' }))?.props.width).toBeUndefined()
     expect((await ui.find({ key: 'context-band' }))?.props).toMatchObject({ width: '50%', flexGrow: 1 })
     expect(JSON.stringify(await ui.drawn())).toContain('"width":"5%"')
     expect(await ui.find({ type: 'Text', text: /^90k$/ })).toBeDefined()
