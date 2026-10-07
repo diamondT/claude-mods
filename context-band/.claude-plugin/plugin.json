@@ -1,0 +1,9 @@
+{
+  "name": "context-band",
+  "version": "0.1.0",
+  "description": "Live context window breakdown in a band above the prompt.",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "diamondT"
+  }
+}
