@@ -30,8 +30,9 @@ function effortOf(settings: Settings, model: string): string | null {
 
 const resetTimes = new Map<string, string>()
 
-async function clockTime($: Engine, iso: string): Promise<string | null> {
-  const known = resetTimes.get(iso)
+async function clockTime($: Engine, iso: string, format: string): Promise<string | null> {
+  const key = `${format} ${iso}`
+  const known = resetTimes.get(key)
   if (known) {
     return known
   }
@@ -40,12 +41,12 @@ async function clockTime($: Engine, iso: string): Promise<string | null> {
     return null
   }
   const epoch = Math.floor(ms / 1000)
-  // local wall-clock time, as the shell's `date` has it: GNU, then BSD (macOS)
+  // local wall-clock time, as the shell's `date` has it: GNU, then BSD (macOS); English day names
   for (const at of [['-d', `@${epoch}`], ['-r', `${epoch}`]]) {
-    const { exitCode, stdout } = await $.process.run(['date', ...at, '+%H:%M'])
+    const { exitCode, stdout } = await $.process.run(['date', ...at, format], { env: { LC_ALL: 'C' } })
     if (exitCode === 0) {
       const time = stdout.trim()
-      resetTimes.set(iso, time)
+      resetTimes.set(key, time)
       return time
     }
   }
@@ -60,8 +61,9 @@ async function limitsOf($: Engine, rateLimits: readonly SessionRateLimit[]): Pro
   const seven = rateLimits.find(r => r.kind === 'seven_day')
   return {
     fiveLeft: left(five.percentUsed),
-    fiveReset: five.resetsAt ? await clockTime($, five.resetsAt) : null,
+    fiveReset: five.resetsAt ? await clockTime($, five.resetsAt, '+%H:%M') : null,
     sevenLeft: seven ? left(seven.percentUsed) : null,
+    sevenReset: seven?.resetsAt ? await clockTime($, seven.resetsAt, '+%a %H:%M') : null,
   }
 }
 

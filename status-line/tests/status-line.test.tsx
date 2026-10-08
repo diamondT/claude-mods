@@ -33,7 +33,7 @@ const usage: SessionUsage = {
   context: { tokens: 152_000, window: 1_000_000, percent: 15 },
   rateLimits: [
     { kind: 'five_hour', percentUsed: 36, resetsAt: '2026-10-07T15:00:00Z' },
-    { kind: 'seven_day', percentUsed: 58 },
+    { kind: 'seven_day', percentUsed: 58, resetsAt: '2026-10-12T15:00:00Z' },
   ],
 }
 
@@ -77,7 +77,7 @@ describe('helpers', () => {
     const { quota, cwd, git } = legend({
       model: 'Opus 5.5',
       effort: 'xhigh',
-      limits: { fiveLeft: 64, fiveReset: '18:00', sevenLeft: 42 },
+      limits: { fiveLeft: 64, fiveReset: '18:00', sevenLeft: 42, sevenReset: 'Mon 18:00' },
       cwd: '~/dev',
       git: { ...parseGit(PORCELAIN), state: 'REBASE 2/5' },
     })
@@ -85,12 +85,12 @@ describe('helpers', () => {
 
     expect(quota.map(text)).toEqual([
       '█\uF0E4 5h █████░░░ 64% left │ \uF1DA → 18:00█',
-      '█\uF073 7d ███░░░░░ 42% left█',
+      '█\uF073 7d ███░░░░░ 42% left │ \uF1DA → Mon 18:00█',
     ])
     expect(quota[0]?.[0]).toEqual({ text: '█', color: '#394545' })
     expect(quota[0]?.find(r => r.text === '█████')).toEqual({ text: '█████', color: '#a6e3a1', bg: '#394545' })
     expect(quota[1]?.find(r => r.text === '███')).toEqual({ text: '███', color: '#fab387', bg: '#413956' })
-    const low = legend({ model: null, effort: null, limits: { fiveLeft: 15, fiveReset: null, sevenLeft: null }, cwd: null, git: null })
+    const low = legend({ model: null, effort: null, limits: { fiveLeft: 15, fiveReset: null, sevenLeft: null, sevenReset: null }, cwd: null, git: null })
     expect(low.quota.map(text)).toEqual(['█\uF0E4 5h █░░░░░░░ 15% left█'])
     expect(text(cwd)).toBe('~/dev')
     expect(text(git)).toBe('🌿 main REBASE 2/5 ⇡2⇣1~1≡3✘1»1!2+2?2')
@@ -115,7 +115,7 @@ test('draws a box in place of the engine hint', async ($, on) => {
   on('process.run', (_$, e) => {
     const [cmd, ...args] = e.argv
     if (cmd === 'date') {
-      return { value: ran('18:00\n') }
+      return { value: ran(args.at(-1) === '+%a %H:%M' ? 'Mon 18:00\n' : '18:00\n') }
     }
     return { value: ran(args.includes('status') ? PORCELAIN : '/home/me/dev/.git\n') }
   })
@@ -141,12 +141,12 @@ test('draws a box in place of the engine hint', async ($, on) => {
     expect(await ui.find({ type: 'Text', text: 'Opus 5.5' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: ' · xhigh' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^█\uF0E4 5h █████░░░ 64% left │ \uF1DA → 18:00█$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^█\uF073 7d ███░░░░░ 42% left█$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^█\uF073 7d ███░░░░░ 42% left │ \uF1DA → Mon 18:00█$/ })).toBeDefined()
     const drawn = JSON.stringify(await ui.drawn())
-    // the 5h pill's own, no separators between sections: half blocks only as the pills' edges
-    expect(drawn.split('│')).toHaveLength(2)
-    expect(drawn.match(/▄+/g)?.map(edge => edge.length)).toEqual([36, 24])
-    expect(drawn.match(/▀+/g)?.map(edge => edge.length)).toEqual([36, 24])
+    // the pills' own, no separators between sections: half blocks only as the pills' edges
+    expect(drawn.split('│')).toHaveLength(3)
+    expect(drawn.match(/▄+/g)?.map(edge => edge.length)).toEqual([36, 40])
+    expect(drawn.match(/▀+/g)?.map(edge => edge.length)).toEqual([36, 40])
     expect((await ui.find({ type: 'Text', text: /^~\/dev$/ }))?.props).toMatchObject({ wrap: 'truncate-start' })
     expect(drawn).toContain('"minWidth":"50%"')
     expect(await ui.find({ type: 'Text', text: /^🌿 main$/ })).toBeDefined()
@@ -201,6 +201,7 @@ test('reads the reset time with BSD date where GNU date fails', async ($, on) =>
       return { value: ran('', 128) }
     }
     calls.push([...e.argv])
+    expect(e.init?.env).toEqual({ LC_ALL: 'C' })
     return { value: flag === '-r' ? ran('19:30\n') : ran('', 1) }
   })
   on('ui.render', { component: 'PromptHint' }, ($, e) => {

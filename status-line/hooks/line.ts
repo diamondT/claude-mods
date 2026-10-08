@@ -160,6 +160,9 @@ function quotaPill(glyph: string, label: string, accent: string, bg: string, pct
   ])
 }
 
+const resetRuns = (at: string | null, accent: string): Run[] =>
+  at ? [SEP, icon(HISTORY, accent), { text: `→ ${at}`, color: C.overlay1 }] : []
+
 export type Legend = { quota: Run[][]; cwd: Run[] | null; git: Run[] | null }
 
 // legend items: quota row, then directory and git row
@@ -167,11 +170,10 @@ export function legend(line: Line): Legend {
   const quota: Run[][] = []
 
   if (line.limits) {
-    const { fiveLeft, fiveReset, sevenLeft } = line.limits
-    const reset = fiveReset ? [SEP, icon(HISTORY, C.green), { text: `→ ${fiveReset}`, color: C.overlay1 }] : []
-    quota.push(quotaPill(GAUGE, '5h', C.green, TINT.green, fiveLeft, reset))
+    const { fiveLeft, fiveReset, sevenLeft, sevenReset } = line.limits
+    quota.push(quotaPill(GAUGE, '5h', C.green, TINT.green, fiveLeft, resetRuns(fiveReset, C.green)))
     if (sevenLeft !== null) {
-      quota.push(quotaPill(CALENDAR, '7d', C.mauve, TINT.mauve, sevenLeft, []))
+      quota.push(quotaPill(CALENDAR, '7d', C.mauve, TINT.mauve, sevenLeft, resetRuns(sevenReset, C.mauve)))
     }
   }
 

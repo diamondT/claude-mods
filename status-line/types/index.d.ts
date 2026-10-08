@@ -12,7 +12,7 @@ export type Git = {
   untracked: number
 }
 
-export type Limits = { fiveLeft: number; fiveReset: string | null; sevenLeft: number | null }
+export type Limits = { fiveLeft: number; fiveReset: string | null; sevenLeft: number | null; sevenReset: string | null }
 
 export type Line = {
   model: string | null
