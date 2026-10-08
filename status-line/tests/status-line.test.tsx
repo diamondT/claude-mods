@@ -84,14 +84,14 @@ describe('helpers', () => {
     const text = (item: Run[] | null) => item?.map(r => r.text).join('')
 
     expect(quota.map(text)).toEqual([
-      '\uE0B6\uF0E4 5h █████░░░ 64% left │ \uF1DA → 18:00\uE0B4',
-      '\uE0B6\uF073 7d ███░░░░░ 42% left\uE0B4',
+      '█\uF0E4 5h █████░░░ 64% left │ \uF1DA → 18:00█',
+      '█\uF073 7d ███░░░░░ 42% left█',
     ])
-    expect(quota[0]?.[0]).toEqual({ text: '\uE0B6', color: '#394545' })
+    expect(quota[0]?.[0]).toEqual({ text: '█', color: '#394545' })
     expect(quota[0]?.find(r => r.text === '█████')).toEqual({ text: '█████', color: '#a6e3a1', bg: '#394545' })
     expect(quota[1]?.find(r => r.text === '███')).toEqual({ text: '███', color: '#fab387', bg: '#413956' })
     const low = legend({ model: null, effort: null, limits: { fiveLeft: 15, fiveReset: null, sevenLeft: null }, cwd: null, git: null })
-    expect(low.quota.map(text)).toEqual(['\uE0B6\uF0E4 5h █░░░░░░░ 15% left\uE0B4'])
+    expect(low.quota.map(text)).toEqual(['█\uF0E4 5h █░░░░░░░ 15% left█'])
     expect(text(cwd)).toBe('~/dev')
     expect(text(git)).toBe('🌿 main REBASE 2/5 ⇡2⇣1~1≡3✘1»1!2+2?2')
     expect(legend({ model: 'Opus 5.5', effort: null, limits: null, cwd: '/srv', git: null })).toEqual({
@@ -140,12 +140,13 @@ test('draws a box in place of the engine hint', async ($, on) => {
     expect((await ui.find({ key: 'status-line' }))?.props).toMatchObject({ borderStyle: 'round', width: '50%' })
     expect(await ui.find({ type: 'Text', text: 'Opus 5.5' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: ' · xhigh' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^\uE0B6\uF0E4 5h █████░░░ 64% left │ \uF1DA → 18:00\uE0B4$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^\uE0B6\uF073 7d ███░░░░░ 42% left\uE0B4$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^█\uF0E4 5h █████░░░ 64% left │ \uF1DA → 18:00█$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^█\uF073 7d ███░░░░░ 42% left█$/ })).toBeDefined()
     const drawn = JSON.stringify(await ui.drawn())
-    // the 5h pill's own, no separators between sections
+    // the 5h pill's own, no separators between sections: half blocks only as the pills' edges
     expect(drawn.split('│')).toHaveLength(2)
-    expect(drawn).not.toContain('▄')
+    expect(drawn.match(/▄+/g)?.map(edge => edge.length)).toEqual([36, 24])
+    expect(drawn.match(/▀+/g)?.map(edge => edge.length)).toEqual([36, 24])
     expect((await ui.find({ type: 'Text', text: /^~\/dev$/ }))?.props).toMatchObject({ wrap: 'truncate-start' })
     expect(drawn).toContain('"minWidth":"50%"')
     expect(await ui.find({ type: 'Text', text: /^🌿 main$/ })).toBeDefined()

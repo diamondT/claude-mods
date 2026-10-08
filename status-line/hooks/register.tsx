@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, SessionRateLimit, Settings, Timer } from 'claude-code'
 
 import type { Git, Limits, Line } from '../types'
-import { left, legend, modelName, parseGit, shortPath } from './line'
+import { cells, left, legend, modelName, parseGit, shortPath } from './line'
 import type { Run } from './line'
 import { addPanel } from './row'
 
@@ -197,8 +197,13 @@ export const register: Register = on => {
         ) : null}
         {l.quota.length > 0 ? (
           <Box flexWrap="wrap" columnGap={2}>
+            {/* half blocks in the pill's colour above and below: a two-row pill with half-row margins */}
             {l.quota.map(item => (
-              <Text>{runs(item)}</Text>
+              <Box flexDirection="column">
+                <Text color={item[0]?.color}>{'▄'.repeat(cells(item))}</Text>
+                <Text>{runs(item)}</Text>
+                <Text color={item[0]?.color}>{'▀'.repeat(cells(item))}</Text>
+              </Box>
             ))}
           </Box>
         ) : null}

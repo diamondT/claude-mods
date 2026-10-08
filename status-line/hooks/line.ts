@@ -19,9 +19,9 @@ const C = {
 // 20% accent over mocha base
 const TINT = { green: '#394545', mauve: '#413956' }
 
-// Nerd Font: powerline half circles, nf-fa
-const CAP_L = '\uE0B6'
-const CAP_R = '\uE0B4'
+// full block in the pill's colour: square ends that meet the half rows above and below
+const CAP = '█'
+// Nerd Font: nf-fa
 const GAUGE = '\uF0E4'
 const CALENDAR = '\uF073'
 const HISTORY = '\uF1DA'
@@ -133,8 +133,10 @@ function gitRuns(g: Git): Run[] {
 }
 
 function pill(bg: string, body: Run[]): Run[] {
-  return [{ text: CAP_L, color: bg }, ...body.map(r => ({ color: C.text, ...r, bg })), { text: CAP_R, color: bg }]
+  return [{ text: CAP, color: bg }, ...body.map(r => ({ color: C.text, ...r, bg })), { text: CAP, color: bg }]
 }
+
+export const cells = (runs: Run[]) => runs.reduce((n, r) => n + [...r.text].length, 0)
 
 const icon = (glyph: string, color: string): Run => ({ text: `${glyph} `, color })
 
