@@ -25,8 +25,10 @@ const CAP = '█'
 const GAUGE = '\uF0E4'
 const CALENDAR = '\uF073'
 const HISTORY = '\uF1DA'
+// Nerd Font: nf-ple lower right + upper left triangles, a full-height slanted segment
+const SEGMENT = '\uE0BA\uE0BC'
 
-const METER_CELLS = 8
+const METER_SEGMENTS = 5
 const SEP: Run = { text: ' │ ', color: C.surface2 }
 
 const MODEL_ID = /^claude-([a-z]+)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?(\[1m\])?$/
@@ -140,12 +142,12 @@ export const cells = (runs: Run[]) => runs.reduce((n, r) => n + [...r.text].leng
 
 const icon = (glyph: string, color: string): Run => ({ text: `${glyph} `, color })
 
-// whole cells: a partial one shows the pill's background between fill and shade
+// whole segments: a partial one shows the pill's background between fill and shade
 function meter(pct: number): Run[] {
-  const full = Math.round((Math.min(100, Math.max(0, pct)) / 100) * METER_CELLS)
+  const full = Math.round((Math.min(100, Math.max(0, pct)) / 100) * METER_SEGMENTS)
   return [
-    { text: '█'.repeat(full), color: severity(pct) },
-    { text: '░'.repeat(METER_CELLS - full), color: C.surface2 },
+    { text: SEGMENT.repeat(full), color: severity(pct) },
+    { text: SEGMENT.repeat(METER_SEGMENTS - full), color: C.overlay1 },
   ]
 }
 
