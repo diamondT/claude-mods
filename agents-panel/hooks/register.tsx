@@ -4,6 +4,8 @@ import type { EngineInterface, Register, Timer } from 'claude-code'
 import type { AgentRun, Others } from '../types'
 import {
   C,
+  FRAME_MS,
+  barParts,
   cardStats,
   completed,
   connector,
@@ -13,7 +15,6 @@ import {
   headline,
   isActive,
   isLive,
-  legend,
   listed,
   mark,
   ordered,
@@ -22,36 +23,41 @@ import {
   spawned,
   stateWord,
   stepped,
-  timelineParts,
   title,
   toolCalled,
   toolLabel,
-  typeColor,
+  tracked,
 } from './agents'
 
 const NO_OTHERS: Others = { loops: [], requests: 0 }
-const runs = atom({ plugin: 'agents-panel', key: 'runs' } as const, [], { shape: 'v2' })
+const runs = atom({ plugin: 'agents-panel', key: 'runs' } as const, [], { shape: 'v3' })
 const others = atom({ plugin: 'agents-panel', key: 'others' } as const, NO_OTHERS)
 const clock = atom({ plugin: 'agents-panel', key: 'now' } as const, 0)
 const dismissed = atom({ plugin: 'agents-panel', key: 'isDismissed' } as const, false)
 
 const PANE = 'agents'
 const OPEN = { id: PANE, title: 'Agents', columns: 60 }
-const TICK_MS = 1000
+const LIST_FRAMES = 4 // the engine's list once a second
 const BAR_CELLS = 500 // wider than any row; clipped to the box
 const CLOCK_COLUMNS = 7
+const MARK_COLUMNS = 2
 const PAD = 1
 
 type Engine = EngineInterface
 
 let ticker: Timer | undefined
+let frames = 0
 
 const isKnown = (list: readonly AgentRun[], id: string | undefined): id is string =>
   id !== undefined && list.some(r => r.id === id)
 
 async function tick($: Engine) {
-  const [now, infos] = await Promise.all([$.clock.now(), $.agent.list()])
-  const list = await update($, runs, prev => listed(prev, infos, now))
+  const now = await $.clock.now()
+  let list = await read($, runs)
+  if (frames++ % LIST_FRAMES === 0) {
+    const infos = await $.agent.list()
+    list = await update($, runs, prev => listed(prev, infos, now))
+  }
   await update($, clock, () => now)
   if (!list.some(isActive)) {
     ticker?.cancel()
@@ -60,7 +66,7 @@ async function tick($: Engine) {
 }
 
 function startTicker($: Engine) {
-  ticker ??= $.clock.every(TICK_MS, () => void tick($))
+  ticker ??= $.clock.every(FRAME_MS, () => void tick($))
 }
 
 async function isOpen($: Engine) {
@@ -142,12 +148,18 @@ export const register: Register = on => {
 
   on('tool.call', async ($, e, next) => {
     const id = e.agentId
-    if (isKnown(await read($, runs), id)) {
-      const label = toolLabel(String(e.tool), e as unknown as Record<string, unknown>)
-      await update($, runs, list => toolCalled(list, id, label))
-      startTicker($)
+    if (!isKnown(await read($, runs), id)) {
+      return next(e)
     }
-    return next(e)
+    const tool = String(e.tool)
+    const input = e as unknown as Record<string, unknown>
+    await update($, runs, list => toolCalled(list, id, toolLabel(tool, input)))
+    startTicker($)
+    const result = await next(e)
+    if (result.deny === undefined && !result.isError) {
+      await update($, runs, list => tracked(list, id, tool, input, result.result))
+    }
+    return result
   })
 
   on('turn.step', async function* ($, e, next) {
@@ -194,14 +206,6 @@ export const register: Register = on => {
             </Text>
           ))}
         </Text>
-        <Box flexWrap="wrap" justifyContent="center" columnGap={2}>
-          {legend(list).map(p => (
-            <Text>
-              <Text color={p.color}>■</Text>
-              <Text color={C.text}>{` ${p.text}`}</Text>
-            </Text>
-          ))}
-        </Box>
       </Box>
     )
 
@@ -218,12 +222,10 @@ export const register: Register = on => {
 
     const rows = ordered(list)
     const live = rows.filter(([run]) => isLive(run))
-    const t0 = Math.min(...list.map(r => r.startedAt))
-    const t1 = Math.max(now, ...list.map(r => r.endedAt ?? r.startedAt))
     const labelColumns = Math.max(8, Math.min(20, Math.floor(width / 3)))
 
     const card = (run: AgentRun, depth: number) => {
-      const color = typeColor(run.type)
+      const { color } = run
       const { glyph } = mark(run)
       const cells = effortCells(run.effort)
       return (
@@ -281,7 +283,7 @@ export const register: Register = on => {
                 {i > 0 ? (
                   <Box height={1} overflow="hidden">
                     <Text>
-                      {connector(width, typeColor(run.type)).map(p => (
+                      {connector(width, run.color).map(p => (
                         <Text color={p.color}>{p.text}</Text>
                       ))}
                     </Text>
@@ -301,27 +303,22 @@ export const register: Register = on => {
           </Box>
           {rows.map(([run, depth], i) => {
             const { glyph, color } = mark(run)
-            const parts = timelineParts(run, t0, t1)
             return (
               <Box key={`bar:${run.id}`} height={1} columnGap={1} overflow="hidden">
-                <Text color={color}>{glyph}</Text>
+                <Box key={`mark:${run.id}`} width={MARK_COLUMNS} flexShrink={0}>
+                  <Text color={color}>{glyph}</Text>
+                </Box>
                 <Box width={labelColumns} flexShrink={0} height={1} overflow="hidden">
                   <Text color={C.text} bold={run.id === inView} wrap="truncate-end">
                     {`${i + 1}: ${depth > 0 ? '↳ ' : ''}${run.description || run.type}`}
                   </Text>
                 </Box>
                 <Box flexGrow={1} height={1} overflow="hidden">
-                  {[
-                    { percent: parts.before, fill: '· ', isSolid: false },
-                    { percent: parts.active, fill: '─', isSolid: true },
-                    { percent: parts.after, fill: '· ', isSolid: false },
-                  ]
-                    .filter(seg => seg.percent > 0)
-                    .map(seg => (
-                      <Box width={`${seg.percent}%`} flexShrink={0} height={1} overflow="hidden">
-                        <Text color={seg.isSolid ? color : C.line}>{seg.fill.repeat(BAR_CELLS)}</Text>
-                      </Box>
-                    ))}
+                  {barParts(run, now).map(seg => (
+                    <Box width={`${seg.percent}%`} flexShrink={0} height={1} overflow="hidden">
+                      <Text color={seg.color}>{seg.fill.repeat(BAR_CELLS)}</Text>
+                    </Box>
+                  ))}
                 </Box>
                 <Box width={CLOCK_COLUMNS} flexShrink={0} justifyContent="flex-end">
                   <Text color={C.text}>{elapsed(run, now)}</Text>

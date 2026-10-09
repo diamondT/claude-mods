@@ -1,7 +1,7 @@
 {
   "name": "agents-panel",
   "version": "0.1.0",
-  "description": "Running subagents, their latest tool call and a timeline in a side panel.",
+  "description": "Running subagents, their latest tool call and progress bars in a side panel.",
   "types": "./types/index.d.ts",
   "author": {
     "name": "diamondT"

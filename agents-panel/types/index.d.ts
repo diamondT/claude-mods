@@ -5,6 +5,7 @@ export type AgentRun = {
   parentId: string | null
   type: string
   description: string
+  color: string
   model: string | null
   effort: string | null
   isTeammate: boolean
@@ -13,6 +14,8 @@ export type AgentRun = {
   endedAt: number | null
   toolUses: number
   lastTool: string | null
+  // its todo items or tasks, id → completed; null before it plans any
+  steps: Record<string, boolean> | null
   requests: number
   // the last request's input, cache included; output summed over requests
   contextTokens: number

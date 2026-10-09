@@ -5,6 +5,7 @@ import type { AgentRun } from '../types'
 import {
   C,
   MAX_RUNS,
+  barParts,
   cardStats,
   completed,
   connector,
@@ -12,20 +13,19 @@ import {
   effortCells,
   formatClock,
   headline,
-  legend,
   listed,
   mark,
   modelName,
   ordered,
   othersLine,
+  progress,
   resumed,
   spawned,
   stepped,
-  timelineParts,
   title,
   toolCalled,
   toolLabel,
-  typeColor,
+  tracked,
 } from '../hooks/agents'
 
 const usage = (input: number, output: number): TurnUsage => ({
@@ -110,20 +110,33 @@ describe('helpers', () => {
     expect(modelName('claude-sonnet-5-5')).toBe('Sonnet 5.5')
   })
 
-  test('colors agent types from the flightdeck palette', () => {
-    expect(typeColor('general-purpose')).toBe(C.coral)
-    expect(typeColor('Explore')).toBe(C.lavender)
-    expect(typeColor('Plan')).toBe(C.green)
-    expect([C.purple, C.teal, C.amber]).toContain(typeColor('fork'))
-    expect(typeColor('fork')).toBe(typeColor('fork'))
+  test('gives each agent its own catppuccin color', () => {
+    const next = (runs: AgentRun[]) => spawned(runs, { id: 'n', type: 'Explore', description: 'n' }, 0).at(-1)?.color
+    const one = spawned([], { id: 'a', type: 'Explore', description: 'a' }, 0)
+    expect(spawned(one, { id: 'b', type: 'Explore', description: 'b' }, 0).map(r => r.color)).toEqual([
+      '#cba6f7',
+      '#fab387',
+    ])
+    // the next one is held by a live run: skipped
+    expect(next([run('x', { color: C.peach }), run('y', { color: C.mauve, status: 'done' })])).toBe(C.sky)
+    // past the last, back to the first, which a finished run left
+    expect(next([run('x', { color: C.mauve, status: 'done' }), run('y', { color: C.rosewater })])).toBe(C.mauve)
+    // eleven at once, none in a state's color
+    let many: AgentRun[] = []
+    for (let i = 0; i < 11; i++) {
+      many = spawned(many, { id: `m${i}`, type: 'Explore', description: `m${i}` }, 0)
+    }
+    const colors = many.map(r => r.color)
+    expect(new Set(colors).size).toBe(11)
+    expect(colors.filter(c => [C.red, C.green, C.yellow].includes(c))).toEqual([])
   })
 
   test('marks a run by its state', () => {
-    expect(mark(run('a', { type: 'Plan' }))).toEqual({ glyph: '●', color: C.green })
+    expect(mark(run('a', { color: C.teal }))).toEqual({ glyph: '●', color: C.teal })
     expect(mark(run('a', { status: 'waiting' }))).toEqual({ glyph: '◌', color: C.dim })
     expect(mark(run('a', { status: 'done' }))).toEqual({ glyph: '✓', color: C.green })
     expect(mark(run('a', { status: 'failed' }))).toEqual({ glyph: '✗', color: C.red })
-    expect(mark(run('a', { status: 'stopped' }))).toEqual({ glyph: '■', color: C.amber })
+    expect(mark(run('a', { status: 'stopped' }))).toEqual({ glyph: '■', color: C.yellow })
   })
 
   test('fills effort cells by level', () => {
@@ -143,15 +156,7 @@ describe('helpers', () => {
     ]
     expect(joined(title(runs))).toBe('AGENTS · 1 WORKING · 1 WAITING · 2 DONE · 1 FAILED')
     expect(joined(title([]))).toBe('AGENTS')
-    expect(title(runs)[2]).toEqual({ text: '1 WORKING', color: C.coral, bold: true })
-  })
-
-  test('lists each agent type once, in spawn order', () => {
-    const runs = [run('a', { type: 'Plan' }), run('b'), run('c', { type: 'Plan' })]
-    expect(legend(runs)).toEqual([
-      { text: 'Plan', color: C.green },
-      { text: 'Explore', color: C.lavender },
-    ])
+    expect(title(runs)[2]).toEqual({ text: '1 WORKING', color: C.peach, bold: true })
   })
 
   test('counts running and total, and the forks', () => {
@@ -182,10 +187,10 @@ describe('helpers', () => {
   })
 
   test('draws a connector with three dots across the width', () => {
-    const pieces = connector(20, C.purple)
+    const pieces = connector(20, C.mauve)
     expect(joined(pieces)).toBe('╌╌╌●╌╌╌╌╌╌●╌╌╌╌╌●╌╌╌')
-    expect(pieces.filter(p => p.text === '●').every(p => p.color === C.purple)).toBe(true)
-    expect(joined(connector(1, C.purple))).toBe('●●●')
+    expect(pieces.filter(p => p.text === '●').every(p => p.color === C.mauve)).toBe(true)
+    expect(joined(connector(1, C.mauve))).toBe('●●●')
   })
 
   test('nests children under their parent in spawn order', () => {
@@ -193,11 +198,31 @@ describe('helpers', () => {
     expect(ordered(runs).map(([r, depth]) => `${r.id}${depth}`)).toEqual(['a0', 'c1', 'b0', 'd0'])
   })
 
-  test('splits the timeline into before, active and after', () => {
-    expect(timelineParts(run('a', { startedAt: 0, endedAt: 50 }), 0, 100)).toEqual({ before: 0, active: 50, after: 50 })
-    expect(timelineParts(run('a', { startedAt: 75, endedAt: null }), 0, 100)).toEqual({ before: 75, active: 25, after: 0 })
-    expect(timelineParts(run('a', { startedAt: 100, endedAt: null }), 0, 100)).toEqual({ before: 99, active: 1, after: 0 })
-    expect(timelineParts(run('a', { startedAt: 5, endedAt: 5 }), 5, 5)).toEqual({ before: 0, active: 1, after: 99 })
+  test('fills the bar with the steps done, full once the agent is', () => {
+    const fill = (percent: number, color: string) => ({ percent, fill: '━', color })
+    const track = (percent: number) => ({ percent, fill: '─', color: C.line })
+    const third = { '1': true, '2': false, '3': false }
+    expect(barParts(run('a', { color: C.teal, steps: third }), 1000)).toEqual([fill(33, C.teal), track(67)])
+    expect(barParts(run('a', { color: C.teal, steps: third, status: 'done' }), 1000)).toEqual([fill(100, C.teal)])
+    expect(barParts(run('a', { color: C.teal, status: 'done' }), 1000)).toEqual([fill(100, C.teal)])
+    expect(barParts(run('a', { status: 'idle' }), 1000)).toEqual([track(100)])
+    // a failed or stopped one keeps what it got through
+    expect(barParts(run('a', { steps: { '1': true, '2': false }, status: 'failed' }), 1000)).toEqual([
+      fill(50, C.red),
+      track(50),
+    ])
+    expect(barParts(run('a', { status: 'stopped' }), 1000)).toEqual([track(100)])
+  })
+
+  test('sweeps the bar while a working agent has no steps', () => {
+    const r = run('a', { color: C.sky, startedAt: 1000 })
+    const at = (frame: number) => barParts(r, 1000 + frame * 250).map(p => `${p.percent}${p.fill}`).join(' ')
+    expect(at(0)).toBe('20━ 80─')
+    expect(at(1)).toBe('10─ 20━ 70─')
+    expect(at(8)).toBe('80─ 20━')
+    expect(at(9)).toBe('70─ 20━ 10─')
+    expect(at(16)).toBe(at(0))
+    expect(barParts(r, 1000).find(p => p.fill === '━')?.color).toBe(C.sky)
   })
 
   test('tracks a run from spawn to completion', () => {
@@ -225,6 +250,38 @@ describe('helpers', () => {
     expect(resumed(completed(runs, 'a', 'answer', 5000), 'a')[0]).toMatchObject({ status: 'running', endedAt: null })
   })
 
+  test('follows an agent through its todo list', () => {
+    const todo = (status: string) => ({ content: 'step', status, activeForm: 'stepping' })
+    let runs = [run('a')]
+    expect(progress(runs[0]!)).toBe(null)
+    runs = tracked(runs, 'a', 'Read', { file_path: 'a.ts' }, 'ok')
+    expect(progress(runs[0]!)).toBe(null)
+    runs = tracked(runs, 'a', 'TodoWrite', { todos: [todo('completed'), todo('in_progress'), todo('pending')] }, {})
+    expect(progress(runs[0]!)).toBe(1 / 3)
+    runs = tracked(runs, 'a', 'TodoWrite', { todos: [todo('completed'), todo('completed')] }, {})
+    expect(progress(runs[0]!)).toBe(1)
+  })
+
+  test('follows an agent through the tasks it creates and updates', () => {
+    const update = (taskId: string, over: object) => (runs: AgentRun[]) =>
+      tracked(runs, 'a', 'TaskUpdate', { taskId, ...over }, { success: true, taskId, updatedFields: [] })
+    let runs = [run('a')]
+    for (const id of ['1', '2']) {
+      runs = tracked(runs, 'a', 'TaskCreate', { subject: id, description: id }, { task: { id, subject: id } })
+    }
+    expect(progress(runs[0]!)).toBe(0)
+    runs = update('1', { status: 'completed' })(runs)
+    expect(progress(runs[0]!)).toBe(0.5)
+    runs = update('1', { subject: 'renamed' })(runs)
+    expect(progress(runs[0]!)).toBe(0.5)
+    runs = update('2', { status: 'deleted' })(runs)
+    expect(progress(runs[0]!)).toBe(1)
+    runs = update('1', { status: 'in_progress' })(runs)
+    expect(progress(runs[0]!)).toBe(0)
+    runs = update('1', { status: 'deleted' })(runs)
+    expect(progress(runs[0]!)).toBe(null)
+  })
+
   test('takes the engine list on live runs only', () => {
     const info = (id: string, status: 'waiting' | 'killed' | 'running') => ({ id, description: '', type: 'Explore', status })
     const runs = [run('a'), run('b'), run('c', { status: 'done', endedAt: 2000 })]
@@ -244,7 +301,7 @@ describe('helpers', () => {
   })
 })
 
-test('draws a card per working agent and every agent on the timeline', async ($, on) => {
+test('draws a card per working agent and a bar for every agent', async ($, on) => {
   const clock = mock.clock(on, { now: 100_000 })
   const opened = engine(on)
 
@@ -280,14 +337,13 @@ test('draws a card per working agent and every agent on the timeline', async ($,
     const ui = await $.ui.mount({ plugin: 'agents-panel', surface, ...pane('a2') })
 
     expect(await ui.find({ type: 'Text', text: /^AGENTS · 1 WORKING · 1 DONE$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^■ Plan$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^■ Explore$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^■ / })).toBeUndefined()
 
     // the finished agent has no card; the one in view a bold border
     expect(await ui.find({ key: 'card:a1' })).toBeUndefined()
-    expect((await ui.find({ key: 'card:a2' }))?.props).toMatchObject({ borderStyle: 'bold', borderColor: C.lavender })
+    expect((await ui.find({ key: 'card:a2' }))?.props).toMatchObject({ borderStyle: 'bold', borderColor: C.peach })
     expect(await ui.find({ type: 'Text', text: /^EXPLORE · Find every caller of parse\(\)$/ })).toBeDefined()
-    expect((await ui.find({ type: 'Text', text: '● working' }))?.props.color).toBe(C.lavender)
+    expect((await ui.find({ type: 'Text', text: '● working' }))?.props.color).toBe(C.peach)
     expect(await ui.find({ type: 'Text', text: /^└ starting…$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^effort ▮▮▮▯▯ high$/ })).toBeDefined()
     for (const stat of ['model Haiku 4.5', 'tools 0', 'req 1', 'ctx 62k', 'out 540', 'for 0:14']) {
@@ -298,11 +354,14 @@ test('draws a card per working agent and every agent on the timeline', async ($,
     expect(await ui.find({ type: 'Text', text: /^1: Draft the migration$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^2: Find every caller of parse\(\)$/ })).toBeDefined()
     expect((await ui.find({ type: 'Text', text: /^✓$/ }))?.props.color).toBe(C.green)
+    // a blank between the mark and the number
+    expect((await ui.find({ key: 'mark:a1' }))?.props.width).toBe(2)
     expect(await ui.find({ type: 'Text', text: /^0:10$/ })).toBeDefined()
-    // of 24s: a1 ran the first 10s, a2 the last 14s
+    // a1 done: a full bar; a2 14s in, 56 frames: the sweep at its far end
     const drawn = JSON.stringify(await ui.drawn())
-    expect(drawn).toContain('"width":"42%"')
-    expect(drawn).toContain('"width":"58%"')
+    expect(drawn).toContain('"width":"100%"')
+    expect(drawn).toContain('"width":"80%"')
+    expect(drawn).toContain('"width":"20%"')
     expect(drawn).toContain('"paddingX":1')
     await ui.unmount()
   }
@@ -324,13 +383,53 @@ test('shows the latest tool call and links the cards', async ($, on) => {
     const ui = await $.ui.mount({ plugin: 'agents-panel', surface, ...pane() })
     expect(await ui.find({ type: 'Text', text: /^└ Bash\(npm test -- parser\)$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^tools 2$/ })).toBeDefined()
-    expect((await ui.find({ key: 'card:a1' }))?.props).toMatchObject({ borderStyle: 'round', borderColor: C.coral })
+    expect((await ui.find({ key: 'card:a1' }))?.props).toMatchObject({ borderStyle: 'round', borderColor: C.mauve })
     // one connector, between the two cards, dotted in the second card's color
     const links = await ui.findAll({ type: 'Text', text: /^╌+●╌+●╌+●╌+$/ })
     expect(links).toHaveLength(1)
-    expect(JSON.stringify(links[0])).toContain(C.green)
+    expect(JSON.stringify(links[0])).toContain(C.peach)
     await ui.unmount()
   }
+})
+
+test('fills each bar with the agent\'s todos and tasks', async ($, on) => {
+  mock.clock(on, { now: 0 })
+  engine(on)
+  on('tool.call', (_$, e) => ({ result: e.tool === 'TaskCreate' ? { task: { id: e.subject, subject: e.subject } } : 'ok' }) as never)
+  const todo = (status: string) => ({ content: 'step', status, activeForm: 'stepping' })
+
+  await $.agent.spawn(spawnInput('Refactor the parser', { subagentType: 'general-purpose' }))
+  await $.agent.spawn(spawnInput('Draft the migration', { subagentType: 'Plan' }))
+  await $.tool.call({ tool: 'TodoWrite', todos: [todo('completed'), todo('pending'), todo('pending')], agentId: 'a1' } as never)
+  for (const id of ['1', '2']) {
+    await $.tool.call({ tool: 'TaskCreate', subject: id, description: id, agentId: 'a2' } as never)
+  }
+  await $.tool.call({ tool: 'TaskUpdate', taskId: '1', status: 'completed', agentId: 'a2' } as never)
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'agents-panel', surface, ...pane() })
+    const drawn = JSON.stringify(await ui.drawn())
+    for (const width of ['33%', '67%', '50%']) {
+      expect(drawn, width).toContain(`"width":"${width}"`)
+    }
+    await ui.unmount()
+  }
+})
+
+test('moves the sweep a frame at a time', async ($, on) => {
+  const clock = mock.clock(on, { now: 0 })
+  engine(on)
+  await $.agent.spawn(spawnInput('Find every caller of parse()'))
+
+  const widths = async () => {
+    const ui = await $.ui.mount({ plugin: 'agents-panel', surface: 'terminal', ...pane() })
+    const drawn = JSON.stringify(await ui.drawn())
+    await ui.unmount()
+    return ['10%', '20%', '70%', '80%'].filter(w => drawn.includes(`"width":"${w}"`))
+  }
+  expect(await widths()).toEqual(['20%', '80%'])
+  await clock.advance(250)
+  expect(await widths()).toEqual(['10%', '20%', '70%'])
 })
 
 test('opens on the first spawn, the command toggles it', async ($, on) => {

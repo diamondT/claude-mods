@@ -6,7 +6,7 @@ Claude Code mods (function-hook plugins).
 | --- | --- |
 | [`context-band`](./context-band) | Live context window breakdown (per category bar + legend) in a panel under Claude Code's hint line. |
 | [`status-line`](./status-line) | Model + effort, 5h/7d quota, cwd and git status in a panel under Claude Code's hint line. |
-| [`agents-panel`](./agents-panel) | Running subagents, their latest tool call, tokens and a timeline in a side panel. Opens on the first spawn (fullscreen, 144+ columns); `/agents-panel` toggles it. |
+| [`agents-panel`](./agents-panel) | Running subagents, their latest tool call, tokens and progress bars in a side panel. Opens on the first spawn (fullscreen, 144+ columns); `/agents-panel` toggles it. |
 
 Installed together, the two panels share one row, half width each.
 

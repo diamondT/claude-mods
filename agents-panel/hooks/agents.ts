@@ -18,23 +18,48 @@ const ARG_KEYS = [
   'prompt',
 ]
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
+export const FRAME_MS = 250
+const FILL = '━'
+const TRACK = '─'
+const SWEEP_WIDTH = 20
+// 0, 10 … 80, 70 … 10: there and back
+const SWEEP = [0, 10, 20, 30, 40, 50, 60, 70, 80, 70, 60, 50, 40, 30, 20, 10]
 
-// flightdeck
+// catppuccin mocha
 export const C = {
-  coral: '#e8805a',
-  lavender: '#aab3f0',
-  green: '#5bbf7a',
-  purple: '#a48bf5',
-  teal: '#64c4bd',
-  amber: '#e0b062',
-  red: '#e5605a',
-  text: '#e4e4e4',
-  dim: '#8c8c96',
-  line: '#4a4a55',
+  rosewater: '#f5e0dc',
+  flamingo: '#f2cdcd',
+  pink: '#f5c2e7',
+  mauve: '#cba6f7',
+  red: '#f38ba8',
+  maroon: '#eba0ac',
+  peach: '#fab387',
+  yellow: '#f9e2af',
+  green: '#a6e3a1',
+  teal: '#94e2d5',
+  sky: '#89dceb',
+  sapphire: '#74c7ec',
+  blue: '#89b4fa',
+  lavender: '#b4befe',
+  text: '#cdd6f4',
+  dim: '#7f849c', // overlay1
+  line: '#585b70', // surface2
 }
 
-const TYPE_COLORS: Record<string, string> = { 'general-purpose': C.coral, Explore: C.lavender, Plan: C.green }
-const SPARE_COLORS = [C.purple, C.teal, C.amber]
+// red, green and yellow left to failed, done and stopped; neighbours apart
+const AGENT_COLORS = [
+  C.mauve,
+  C.peach,
+  C.sky,
+  C.pink,
+  C.teal,
+  C.blue,
+  C.flamingo,
+  C.maroon,
+  C.lavender,
+  C.sapphire,
+  C.rosewater,
+]
 
 const STATE_WORDS: Record<RunStatus, string> = {
   running: 'working',
@@ -70,7 +95,7 @@ export type Piece = { text: string; color: string; bold?: boolean }
 
 export type Stat = { label: string; value: string }
 
-export type TimelineParts = { before: number; active: number; after: number }
+export type BarPart = { percent: number; fill: string; color: string }
 
 export const isActive = (r: AgentRun) => r.status === 'running' || r.status === 'waiting'
 
@@ -78,22 +103,23 @@ export const isLive = (r: AgentRun) => isActive(r) || r.status === 'idle'
 
 export const stateWord = (s: RunStatus) => STATE_WORDS[s]
 
-export function typeColor(type: string): string {
-  const known = TYPE_COLORS[type]
-  if (known) {
-    return known
+// the first color after the last run's that no live run holds
+function nextColor(runs: readonly AgentRun[]): string {
+  const last = AGENT_COLORS.indexOf(runs.at(-1)?.color ?? '')
+  const held = new Set(runs.filter(isLive).map(r => r.color))
+  const after = (i: number) => AGENT_COLORS[(last + i) % AGENT_COLORS.length] ?? C.mauve
+  for (let i = 1; i <= AGENT_COLORS.length; i++) {
+    if (!held.has(after(i))) {
+      return after(i)
+    }
   }
-  let hash = 0
-  for (const ch of type) {
-    hash = (hash * 31 + ch.charCodeAt(0)) >>> 0
-  }
-  return SPARE_COLORS[hash % SPARE_COLORS.length] ?? C.purple
+  return after(1)
 }
 
 export function mark(r: AgentRun): Mark {
   switch (r.status) {
     case 'running':
-      return { glyph: '●', color: typeColor(r.type) }
+      return { glyph: '●', color: r.color }
     case 'waiting':
       return { glyph: '◌', color: C.dim }
     case 'idle':
@@ -103,7 +129,7 @@ export function mark(r: AgentRun): Mark {
     case 'failed':
       return { glyph: '✗', color: C.red }
     case 'stopped':
-      return { glyph: '■', color: C.amber }
+      return { glyph: '■', color: C.yellow }
   }
 }
 
@@ -170,11 +196,11 @@ export function title(runs: readonly AgentRun[]): Piece[] {
   const count = (...statuses: RunStatus[]) => runs.filter(r => statuses.includes(r.status)).length
   const out: Piece[] = [{ text: 'AGENTS', color: C.text, bold: true }]
   const counts: [number, string, string][] = [
-    [count('running'), 'WORKING', C.coral],
+    [count('running'), 'WORKING', C.peach],
     [count('waiting', 'idle'), 'WAITING', C.lavender],
     [count('done'), 'DONE', C.green],
     [count('failed'), 'FAILED', C.red],
-    [count('stopped'), 'STOPPED', C.amber],
+    [count('stopped'), 'STOPPED', C.yellow],
   ]
   for (const [n, word, color] of counts) {
     if (n > 0) {
@@ -182,11 +208,6 @@ export function title(runs: readonly AgentRun[]): Piece[] {
     }
   }
   return out
-}
-
-// the agent types seen, in order of first spawn
-export function legend(runs: readonly AgentRun[]): Piece[] {
-  return [...new Set(runs.map(r => r.type))].map(type => ({ text: type, color: typeColor(type) }))
 }
 
 export function headline(runs: readonly AgentRun[]): string {
@@ -244,13 +265,35 @@ export function ordered(runs: readonly AgentRun[]): [AgentRun, number][] {
   return out
 }
 
-// shares of [t0, t1]: waiting to start, active, ended
-export function timelineParts(r: AgentRun, t0: number, t1: number): TimelineParts {
-  const span = Math.max(1, t1 - t0)
-  const pct = (t: number) => Math.round(((Math.min(Math.max(t, t0), t1) - t0) * 100) / span)
-  const start = Math.min(pct(r.startedAt), 99)
-  const end = Math.max(pct(r.endedAt ?? t1), start + 1)
-  return { before: start, active: end - start, after: 100 - end }
+// ━━━━━━──────── the steps done, or ───━━━───── sweeping while there are none
+export function barParts(r: AgentRun, now: number): BarPart[] {
+  const done = progress(r)
+  const filled = (share: number, color: string): BarPart[] => {
+    const percent = Math.round(share * 100)
+    return [
+      { percent, fill: FILL, color },
+      { percent: 100 - percent, fill: TRACK, color: C.line },
+    ]
+  }
+  const parts = (): BarPart[] => {
+    if (r.status === 'done') {
+      return filled(1, r.color)
+    }
+    if (r.status === 'failed' || r.status === 'stopped') {
+      return filled(done ?? 0, mark(r).color)
+    }
+    if (done !== null || r.status !== 'running') {
+      return filled(done ?? 0, r.color)
+    }
+    const frame = Math.max(0, Math.floor((now - r.startedAt) / FRAME_MS))
+    const at = SWEEP[frame % SWEEP.length] ?? 0
+    return [
+      { percent: at, fill: TRACK, color: C.line },
+      { percent: SWEEP_WIDTH, fill: FILL, color: r.color },
+      { percent: 100 - at - SWEEP_WIDTH, fill: TRACK, color: C.line },
+    ]
+  }
+  return parts().filter(p => p.percent > 0)
 }
 
 function prune(runs: AgentRun[]): AgentRun[] {
@@ -268,11 +311,13 @@ const patch = (runs: readonly AgentRun[], id: string, fn: (r: AgentRun) => Agent
   runs.map(r => (r.id === id ? fn(r) : r))
 
 export function spawned(runs: readonly AgentRun[], s: Spawn, now: number): AgentRun[] {
+  const rest = runs.filter(r => r.id !== s.id)
   const run: AgentRun = {
     id: s.id,
     parentId: s.parentId ?? null,
     type: s.type,
     description: s.description,
+    color: nextColor(rest),
     model: s.model ?? null,
     effort: null,
     isTeammate: s.isTeammate === true,
@@ -281,11 +326,12 @@ export function spawned(runs: readonly AgentRun[], s: Spawn, now: number): Agent
     endedAt: null,
     toolUses: 0,
     lastTool: null,
+    steps: null,
     requests: 0,
     contextTokens: 0,
     outputTokens: 0,
   }
-  return prune([...runs.filter(r => r.id !== s.id), run])
+  return prune([...rest, run])
 }
 
 export const resumed = (runs: readonly AgentRun[], id: string) =>
@@ -293,6 +339,56 @@ export const resumed = (runs: readonly AgentRun[], id: string) =>
 
 export const toolCalled = (runs: readonly AgentRun[], id: string, label: string) =>
   patch(runs, id, r => ({ ...r, status: 'running', endedAt: null, toolUses: r.toolUses + 1, lastTool: label }))
+
+type Steps = Record<string, boolean>
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null
+
+// TodoWrite sends the whole list; TaskCreate answers the id TaskUpdate names
+function stepsAfter(
+  steps: Steps | null,
+  tool: string,
+  input: Readonly<Record<string, unknown>>,
+  output: unknown,
+): Steps | null {
+  switch (tool) {
+    case 'TodoWrite': {
+      const todos: unknown[] = Array.isArray(input.todos) ? input.todos : []
+      return Object.fromEntries(todos.map((t, i) => [`todo${i}`, isRecord(t) && t.status === 'completed']))
+    }
+    case 'TaskCreate': {
+      const task = isRecord(output) ? output.task : undefined
+      return isRecord(task) && typeof task.id === 'string' ? { ...steps, [task.id]: false } : steps
+    }
+    case 'TaskUpdate': {
+      const { taskId, status } = input
+      if (typeof taskId !== 'string' || typeof status !== 'string') {
+        return steps
+      }
+      if (status === 'deleted') {
+        const { [taskId]: _, ...rest } = steps ?? {}
+        return rest
+      }
+      return { ...steps, [taskId]: status === 'completed' }
+    }
+    default:
+      return steps
+  }
+}
+
+export const tracked = (
+  runs: readonly AgentRun[],
+  id: string,
+  tool: string,
+  input: Readonly<Record<string, unknown>>,
+  output: unknown,
+) => patch(runs, id, r => ({ ...r, steps: stepsAfter(r.steps, tool, input, output) }))
+
+// share of its steps completed, null with none
+export function progress(r: AgentRun): number | null {
+  const steps = Object.values(r.steps ?? {})
+  return steps.length === 0 ? null : steps.filter(Boolean).length / steps.length
+}
 
 export const stepped = (
   runs: readonly AgentRun[],
