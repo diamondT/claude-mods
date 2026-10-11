@@ -199,30 +199,48 @@ describe('helpers', () => {
   })
 
   test('fills the bar with the steps done, full once the agent is', () => {
-    const fill = (percent: number, color: string) => ({ percent, fill: '━', color })
-    const track = (percent: number) => ({ percent, fill: '─', color: C.line })
+    const fill = (cells: number, color: string) => ({ cells, fill: '━', color })
+    const track = (cells: number) => ({ cells, fill: '─', color: C.line })
     const third = { '1': true, '2': false, '3': false }
-    expect(barParts(run('a', { color: C.teal, steps: third }), 1000)).toEqual([fill(33, C.teal), track(67)])
-    expect(barParts(run('a', { color: C.teal, steps: third, status: 'done' }), 1000)).toEqual([fill(100, C.teal)])
-    expect(barParts(run('a', { color: C.teal, status: 'done' }), 1000)).toEqual([fill(100, C.teal)])
-    expect(barParts(run('a', { status: 'idle' }), 1000)).toEqual([track(100)])
+    expect(barParts(run('a', { color: C.teal, steps: third }), 1000, 30)).toEqual([fill(10, C.teal), track(20)])
+    expect(barParts(run('a', { color: C.teal, steps: third, status: 'done' }), 1000, 30)).toEqual([fill(30, C.teal)])
+    expect(barParts(run('a', { color: C.teal, status: 'done' }), 1000, 30)).toEqual([fill(30, C.teal)])
+    expect(barParts(run('a', { status: 'idle' }), 1000, 30)).toEqual([track(30)])
     // a failed or stopped one keeps what it got through
-    expect(barParts(run('a', { steps: { '1': true, '2': false }, status: 'failed' }), 1000)).toEqual([
-      fill(50, C.red),
-      track(50),
+    expect(barParts(run('a', { steps: { '1': true, '2': false }, status: 'failed' }), 1000, 30)).toEqual([
+      fill(15, C.red),
+      track(15),
     ])
-    expect(barParts(run('a', { status: 'stopped' }), 1000)).toEqual([track(100)])
+    expect(barParts(run('a', { status: 'stopped' }), 1000, 30)).toEqual([track(30)])
   })
 
   test('sweeps the bar while a working agent has no steps', () => {
     const r = run('a', { color: C.sky, startedAt: 1000 })
-    const at = (frame: number) => barParts(r, 1000 + frame * 250).map(p => `${p.percent}${p.fill}`).join(' ')
-    expect(at(0)).toBe('20━ 80─')
-    expect(at(1)).toBe('10─ 20━ 70─')
-    expect(at(8)).toBe('80─ 20━')
-    expect(at(9)).toBe('70─ 20━ 10─')
+    const at = (frame: number) => barParts(r, 1000 + frame * 250, 30).map(p => `${p.cells}${p.fill}`).join(' ')
+    expect(at(0)).toBe('6━ 24─')
+    expect(at(1)).toBe('3─ 6━ 21─')
+    expect(at(8)).toBe('24─ 6━')
+    expect(at(9)).toBe('21─ 6━ 3─')
     expect(at(16)).toBe(at(0))
-    expect(barParts(r, 1000).find(p => p.fill === '━')?.color).toBe(C.sky)
+    expect(barParts(r, 1000, 30).find(p => p.fill === '━')?.color).toBe(C.sky)
+  })
+
+  test('keeps every bar the width it is given, the sweep one size', () => {
+    const r = run('a', { startedAt: 0 })
+    const total = (parts: { cells: number }[]) => parts.reduce((n, p) => n + p.cells, 0)
+    for (let columns = 1; columns <= 80; columns++) {
+      const sweeps = new Set<number>()
+      for (let frame = 0; frame < 16; frame++) {
+        const parts = barParts(r, frame * 250, columns)
+        expect(total(parts), `${columns} at ${frame}`).toBe(columns)
+        sweeps.add(parts.find(p => p.fill === '━')?.cells ?? 0)
+      }
+      expect([...sweeps], `${columns}`).toHaveLength(1)
+      for (const done of [0, 3, 6, 8, 12]) {
+        const steps = Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`${i}`, i < done]))
+        expect(total(barParts(run('a', { steps }), 0, columns)), `${columns} at ${done}/12`).toBe(columns)
+      }
+    }
   })
 
   test('tracks a run from spawn to completion', () => {
@@ -357,12 +375,10 @@ test('draws a card per working agent and a bar for every agent', async ($, on) =
     // a blank between the mark and the number
     expect((await ui.find({ key: 'mark:a1' }))?.props.width).toBe(2)
     expect(await ui.find({ type: 'Text', text: /^0:10$/ })).toBeDefined()
-    // a1 done: a full bar; a2 14s in, 56 frames: the sweep at its far end
-    const drawn = JSON.stringify(await ui.drawn())
-    expect(drawn).toContain('"width":"100%"')
-    expect(drawn).toContain('"width":"80%"')
-    expect(drawn).toContain('"width":"20%"')
-    expect(drawn).toContain('"paddingX":1')
+    // 27 cells of bar; a1 done: a full one; a2 14s in, 56 frames: the sweep at its far end
+    expect(await ui.find({ type: 'Text', text: new RegExp(`^${'━'.repeat(27)}$`) })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: new RegExp(`^${'─'.repeat(22)}${'━'.repeat(5)}$`) })).toBeDefined()
+    expect(JSON.stringify(await ui.drawn())).toContain('"paddingX":1')
     await ui.unmount()
   }
 })
@@ -408,9 +424,10 @@ test('fills each bar with the agent\'s todos and tasks', async ($, on) => {
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'agents-panel', surface, ...pane() })
-    const drawn = JSON.stringify(await ui.drawn())
-    for (const width of ['33%', '67%', '50%']) {
-      expect(drawn, width).toContain(`"width":"${width}"`)
+    // a third of 27 cells, then half
+    for (const [fill, track] of [[9, 18], [14, 13]] as const) {
+      const bar = new RegExp(`^${'━'.repeat(fill)}${'─'.repeat(track)}$`)
+      expect(await ui.find({ type: 'Text', text: bar }), `${fill}`).toBeDefined()
     }
     await ui.unmount()
   }
@@ -421,15 +438,16 @@ test('moves the sweep a frame at a time', async ($, on) => {
   engine(on)
   await $.agent.spawn(spawnInput('Find every caller of parse()'))
 
-  const widths = async () => {
+  const drawn = async (...pieces: [number, string][]) => {
     const ui = await $.ui.mount({ plugin: 'agents-panel', surface: 'terminal', ...pane() })
-    const drawn = JSON.stringify(await ui.drawn())
+    const bar = new RegExp(`^${pieces.map(([n, fill]) => fill.repeat(n)).join('')}$`)
+    const found = await ui.find({ type: 'Text', text: bar })
     await ui.unmount()
-    return ['10%', '20%', '70%', '80%'].filter(w => drawn.includes(`"width":"${w}"`))
+    return found
   }
-  expect(await widths()).toEqual(['20%', '80%'])
+  expect(await drawn([5, '━'], [22, '─'])).toBeDefined()
   await clock.advance(250)
-  expect(await widths()).toEqual(['10%', '20%', '70%'])
+  expect(await drawn([3, '─'], [5, '━'], [19, '─'])).toBeDefined()
 })
 
 test('opens on the first spawn, the command toggles it', async ($, on) => {

@@ -95,7 +95,7 @@ export type Piece = { text: string; color: string; bold?: boolean }
 
 export type Stat = { label: string; value: string }
 
-export type BarPart = { percent: number; fill: string; color: string }
+export type BarPart = { cells: number; fill: string; color: string }
 
 export const isActive = (r: AgentRun) => r.status === 'running' || r.status === 'waiting'
 
@@ -265,14 +265,15 @@ export function ordered(runs: readonly AgentRun[]): [AgentRun, number][] {
   return out
 }
 
-// ━━━━━━──────── the steps done, or ───━━━───── sweeping while there are none
-export function barParts(r: AgentRun, now: number): BarPart[] {
+// ━━━━━━──────── the steps done, or ───━━━───── sweeping while there are none;
+// whole cells summing to columns, so no row ends short of another
+export function barParts(r: AgentRun, now: number, columns: number): BarPart[] {
   const done = progress(r)
   const filled = (share: number, color: string): BarPart[] => {
-    const percent = Math.round(share * 100)
+    const cells = Math.round(share * columns)
     return [
-      { percent, fill: FILL, color },
-      { percent: 100 - percent, fill: TRACK, color: C.line },
+      { cells, fill: FILL, color },
+      { cells: columns - cells, fill: TRACK, color: C.line },
     ]
   }
   const parts = (): BarPart[] => {
@@ -286,14 +287,15 @@ export function barParts(r: AgentRun, now: number): BarPart[] {
       return filled(done ?? 0, r.color)
     }
     const frame = Math.max(0, Math.floor((now - r.startedAt) / FRAME_MS))
-    const at = SWEEP[frame % SWEEP.length] ?? 0
+    const width = Math.max(1, Math.round((columns * SWEEP_WIDTH) / 100))
+    const at = Math.min(Math.round((columns * (SWEEP[frame % SWEEP.length] ?? 0)) / 100), columns - width)
     return [
-      { percent: at, fill: TRACK, color: C.line },
-      { percent: SWEEP_WIDTH, fill: FILL, color: r.color },
-      { percent: 100 - at - SWEEP_WIDTH, fill: TRACK, color: C.line },
+      { cells: at, fill: TRACK, color: C.line },
+      { cells: width, fill: FILL, color: r.color },
+      { cells: columns - at - width, fill: TRACK, color: C.line },
     ]
   }
-  return parts().filter(p => p.percent > 0)
+  return parts().filter(p => p.cells > 0)
 }
 
 function prune(runs: AgentRun[]): AgentRun[] {

@@ -38,10 +38,10 @@ const dismissed = atom({ plugin: 'agents-panel', key: 'isDismissed' } as const, 
 const PANE = 'agents'
 const OPEN = { id: PANE, title: 'Agents', columns: 60 }
 const LIST_FRAMES = 4 // the engine's list once a second
-const BAR_CELLS = 500 // wider than any row; clipped to the box
 const CLOCK_COLUMNS = 7
 const MARK_COLUMNS = 2
 const PAD = 1
+const GAP = 1
 
 type Engine = EngineInterface
 
@@ -223,6 +223,8 @@ export const register: Register = on => {
     const rows = ordered(list)
     const live = rows.filter(([run]) => isLive(run))
     const labelColumns = Math.max(8, Math.min(20, Math.floor(width / 3)))
+    // mark, label, bar and clock, a gap between each
+    const barColumns = Math.max(1, width - MARK_COLUMNS - labelColumns - CLOCK_COLUMNS - 3 * GAP)
 
     const card = (run: AgentRun, depth: number) => {
       const { color } = run
@@ -304,7 +306,7 @@ export const register: Register = on => {
           {rows.map(([run, depth], i) => {
             const { glyph, color } = mark(run)
             return (
-              <Box key={`bar:${run.id}`} height={1} columnGap={1} overflow="hidden">
+              <Box key={`bar:${run.id}`} height={1} columnGap={GAP} overflow="hidden">
                 <Box key={`mark:${run.id}`} width={MARK_COLUMNS} flexShrink={0}>
                   <Text color={color}>{glyph}</Text>
                 </Box>
@@ -314,11 +316,11 @@ export const register: Register = on => {
                   </Text>
                 </Box>
                 <Box flexGrow={1} height={1} overflow="hidden">
-                  {barParts(run, now).map(seg => (
-                    <Box width={`${seg.percent}%`} flexShrink={0} height={1} overflow="hidden">
-                      <Text color={seg.color}>{seg.fill.repeat(BAR_CELLS)}</Text>
-                    </Box>
-                  ))}
+                  <Text>
+                    {barParts(run, now, barColumns).map(seg => (
+                      <Text color={seg.color}>{seg.fill.repeat(seg.cells)}</Text>
+                    ))}
+                  </Text>
                 </Box>
                 <Box width={CLOCK_COLUMNS} flexShrink={0} justifyContent="flex-end">
                   <Text color={C.text}>{elapsed(run, now)}</Text>
