@@ -2,8 +2,9 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, SessionRateLimit, Settings, Timer } from 'claude-code'
 
 import type { Git, Limits, Line } from '../types'
-import { cells, left, legend, modelName, parseGit, shortPath } from './line'
+import { left, legend, modelName, parseGit, shortPath } from './line'
 import type { Run } from './line'
+import type { QuotaProps } from './quota'
 import { addPanel } from './row'
 
 const EMPTY: Line = { model: null, effort: null, limits: null, cwd: null, git: null }
@@ -168,13 +169,17 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     const below = await next(e)
+    // PromptHint's only surfaces; narrows to the tables with Client
+    if (e.surface !== 'terminal' && e.surface !== 'desktop') {
+      return below
+    }
     const s = await read($, line)
     const l = legend(s)
     if (!s.model && l.quota.length === 0 && !l.cwd && !l.git) {
       return below
     }
 
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Text, Client } = $.ui.resolve(e)
     const runs = (item: Run[]) =>
       item.map(r => (
         <Text color={r.color} backgroundColor={r.bg} dimColor={r.dim} bold={r.bold}>
@@ -198,16 +203,16 @@ export const register: Register = on => {
           </Text>
         ) : null}
         {l.quota.length > 0 ? (
-          <Box flexWrap="wrap" columnGap={2}>
-            {/* half blocks in the pill's colour above and below: a two-row pill with half-row margins */}
-            {l.quota.map(item => (
-              <Box flexDirection="column">
-                <Text color={item[0]?.color}>{'▄'.repeat(cells(item))}</Text>
-                <Text>{runs(item)}</Text>
-                <Text color={item[0]?.color}>{'▀'.repeat(cells(item))}</Text>
-              </Box>
-            ))}
-          </Box>
+          <Client
+            key="status-line:quota"
+            module="./quota.tsx"
+            props={
+              {
+                tiers: [l.quota, legend(s, { meters: false }).quota, legend(s, { meters: false, left: false }).quota],
+              } satisfies QuotaProps
+            }
+            width="100%"
+          />
         ) : null}
         {l.cwd || l.git ? (
           <Box>

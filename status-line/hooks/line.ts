@@ -151,13 +151,17 @@ function meter(pct: number): Run[] {
   ]
 }
 
-function quotaPill(glyph: string, label: string, accent: string, bg: string, pct: number, reset: Run[]): Run[] {
+// what a pill may leave out to fit a narrow row
+export type Detail = { meters?: boolean; left?: boolean }
+
+function quotaPill(glyph: string, label: string, accent: string, bg: string, pct: number, reset: Run[], detail: Detail): Run[] {
+  const { meters = true, left = true } = detail
   return pill(bg, [
     icon(glyph, accent),
     { text: `${label} ` },
-    ...meter(pct),
-    { text: ` ${pct}%`, bold: true, color: pct <= 20 ? C.red : C.text },
-    { text: ' left', color: C.overlay1 },
+    ...(meters ? meter(pct) : []),
+    { text: `${meters ? ' ' : ''}${pct}%`, bold: true, color: pct <= 20 ? C.red : C.text },
+    ...(left ? [{ text: ' left', color: C.overlay1 }] : []),
     ...reset,
   ])
 }
@@ -168,14 +172,14 @@ const resetRuns = (at: string | null, accent: string): Run[] =>
 export type Legend = { quota: Run[][]; cwd: Run[] | null; git: Run[] | null }
 
 // legend items: quota row, then directory and git row
-export function legend(line: Line): Legend {
+export function legend(line: Line, detail: Detail = {}): Legend {
   const quota: Run[][] = []
 
   if (line.limits) {
     const { fiveLeft, fiveReset, sevenLeft, sevenReset } = line.limits
-    quota.push(quotaPill(GAUGE, '5h', C.green, TINT.green, fiveLeft, resetRuns(fiveReset, C.green)))
+    quota.push(quotaPill(GAUGE, '5h', C.green, TINT.green, fiveLeft, resetRuns(fiveReset, C.green), detail))
     if (sevenLeft !== null) {
-      quota.push(quotaPill(CALENDAR, '7d', C.mauve, TINT.mauve, sevenLeft, resetRuns(sevenReset, C.mauve)))
+      quota.push(quotaPill(CALENDAR, '7d', C.mauve, TINT.mauve, sevenLeft, resetRuns(sevenReset, C.mauve), detail))
     }
   }
 

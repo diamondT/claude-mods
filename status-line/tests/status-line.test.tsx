@@ -42,6 +42,7 @@ const usage: SessionUsage = {
 const hintProps = (hint: string) =>
   ({ component: 'PromptHint', props: { isDraft: false, isWorking: false, hint } }) as const
 const HINT = hintProps('? for shortcuts')
+const QUOTA = 'status-line:quota'
 
 describe('helpers', () => {
   test('names models as the status line did', () => {
@@ -94,6 +95,9 @@ describe('helpers', () => {
     expect(quota[1]?.find(r => r.text === seg(2))).toEqual({ text: seg(2), color: '#fab387', bg: '#413956' })
     const low = legend({ model: null, effort: null, limits: { fiveLeft: 15, fiveReset: null, sevenLeft: null, sevenReset: null }, cwd: null, git: null })
     expect(low.quota.map(text)).toEqual([`█\uF0E4 5h ${seg(5)} 15% left█`])
+    const limited = { model: null, effort: null, limits: { fiveLeft: 64, fiveReset: '18:00', sevenLeft: 42, sevenReset: null }, cwd: null, git: null }
+    expect(legend(limited, { meters: false }).quota.map(text)).toEqual(['█\uF0E4 5h 64% left │ \uF1DA → 18:00█', '█\uF073 7d 42% left█'])
+    expect(legend(limited, { meters: false, left: false }).quota.map(text)).toEqual(['█\uF0E4 5h 64% │ \uF1DA → 18:00█', '█\uF073 7d 42%█'])
     expect(text(cwd)).toBe('~/dev')
     expect(text(git)).toBe('🌿 main REBASE 2/5 ⇡2⇣1~1≡3✘1»1!2+2?2')
     expect(legend({ model: 'Opus 5.5', effort: null, limits: null, cwd: '/srv', git: null })).toEqual({
@@ -142,16 +146,72 @@ test('draws a box in place of the engine hint', async ($, on) => {
     expect((await ui.find({ key: 'status-line' }))?.props).toMatchObject({ borderStyle: 'round', width: '50%' })
     expect(await ui.find({ type: 'Text', text: 'Opus 5.5' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: ' · xhigh' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^█\uF0E4 5h (\uE0BA\uE0BC){5} 64% left │ \uF1DA → 18:00█$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^█\uF073 7d (\uE0BA\uE0BC){5} 42% left │ \uF1DA → Mon 18:00█$/ })).toBeDefined()
-    const drawn = JSON.stringify(await ui.drawn())
+    expect((await ui.find({ key: QUOTA }))?.props).toMatchObject({ module: 'hooks/quota.tsx', width: '100%' })
+    await ui.resize({ columns: 82, rows: 3, in: QUOTA })
+    expect(await ui.find({ type: 'Text', text: /^█\uF0E4 5h (\uE0BA\uE0BC){5} 64% left │ \uF1DA → 18:00█$/, in: QUOTA })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^█\uF073 7d (\uE0BA\uE0BC){5} 42% left │ \uF1DA → Mon 18:00█$/, in: QUOTA })).toBeDefined()
+    const pills = JSON.stringify(await ui.drawn({ in: QUOTA }))
     // the pills' own, no separators between sections: half blocks only as the pills' edges
-    expect(drawn.split('│')).toHaveLength(3)
-    expect(drawn.match(/▄+/g)?.map(edge => edge.length)).toEqual([38, 42])
-    expect(drawn.match(/▀+/g)?.map(edge => edge.length)).toEqual([38, 42])
+    expect(pills.split('│')).toHaveLength(3)
+    expect(pills.match(/▄+/g)?.map(edge => edge.length)).toEqual([38, 42])
+    expect(pills.match(/▀+/g)?.map(edge => edge.length)).toEqual([38, 42])
+    const drawn = JSON.stringify(await ui.drawn())
     expect((await ui.find({ type: 'Text', text: /^~\/dev$/ }))?.props).toMatchObject({ wrap: 'truncate-start' })
     expect(drawn).toContain('"minWidth":"50%"')
     expect(await ui.find({ type: 'Text', text: /^🌿 main$/ })).toBeDefined()
+    await ui.unmount()
+  }
+})
+
+test('drops the meters, then "left", while both pills would not fit one row', async ($, on) => {
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('session.model', () => ({ value: 'claude-opus-5-5' }))
+  on('settings.read', () => ({ value: {} }))
+  on('session.usage', () => ({ value: usage }))
+  on('session.cwd', () => ({ value: '/srv' }))
+  on('process.run', (_$, e) => {
+    if (e.argv[0] !== 'date') {
+      return { value: ran('', 128) }
+    }
+    return { value: ran(e.argv.at(-1) === '+%a %H:%M' ? 'Mon 18:00\n' : '18:00\n') }
+  })
+  on('ui.render', { component: 'PromptHint' }, ($, e) => {
+    const { Box } = $.ui.resolve(e)
+    return <Box key="engine" />
+  })
+
+  await $.session.start({ cwd: '/srv', surface: 'terminal', isInteractive: true })
+
+  const full = [
+    /^█\uF0E4 5h (\uE0BA\uE0BC){5} 64% left │ \uF1DA → 18:00█$/,
+    /^█\uF073 7d (\uE0BA\uE0BC){5} 42% left │ \uF1DA → Mon 18:00█$/,
+  ]
+  const bare = [/^█\uF0E4 5h 64% left │ \uF1DA → 18:00█$/, /^█\uF073 7d 42% left │ \uF1DA → Mon 18:00█$/]
+  const tight = [/^█\uF0E4 5h 64% │ \uF1DA → 18:00█$/, /^█\uF073 7d 42% │ \uF1DA → Mon 18:00█$/]
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'status-line', surface, ...HINT })
+    const expectPills = async (pills: RegExp[]) => {
+      for (const text of pills) {
+        expect(await ui.find({ type: 'Text', text, in: QUOTA })).toBeDefined()
+      }
+    }
+
+    // not laid out yet
+    await expectPills(tight)
+    // 38 + 2 + 42
+    await ui.resize({ columns: 82, rows: 3, in: QUOTA })
+    await expectPills(full)
+    await ui.resize({ columns: 81, rows: 3, in: QUOTA })
+    await expectPills(bare)
+    expect(await ui.find({ type: 'Text', text: /\uE0BA/, in: QUOTA })).toBeUndefined()
+    // 27 + 2 + 31
+    await ui.resize({ columns: 60, rows: 3, in: QUOTA })
+    await expectPills(bare)
+    await ui.resize({ columns: 59, rows: 3, in: QUOTA })
+    await expectPills(tight)
+    await ui.resize({ columns: 120, rows: 3, in: QUOTA })
+    await expectPills(full)
     await ui.unmount()
   }
 })
@@ -218,7 +278,7 @@ test('reads the reset time with BSD date where GNU date fails', async ($, on) =>
     ['date', '-d', '@1791390600', '+%H:%M'],
     ['date', '-r', '1791390600', '+%H:%M'],
   ])
-  expect(await ui.find({ type: 'Text', text: '→ 19:30' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '→ 19:30', in: QUOTA })).toBeDefined()
   await ui.unmount()
 })
 
