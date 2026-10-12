@@ -1,6 +1,6 @@
 {
   "name": "agents-panel",
-  "version": "0.1.0",
+  "version": "0.20261012.1",
   "description": "Running subagents, their latest tool call and progress bars in a side panel.",
   "types": "./types/index.d.ts",
   "author": {

@@ -1,6 +1,6 @@
 {
   "name": "status-line",
-  "version": "0.1.0",
+  "version": "0.20261012.1",
   "description": "Model, quota, context, cwd and git status in a panel under the prompt hint line.",
   "types": "./types/index.d.ts",
   "author": {

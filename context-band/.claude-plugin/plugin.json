@@ -1,6 +1,6 @@
 {
   "name": "context-band",
-  "version": "0.1.0",
+  "version": "0.20261012.1",
   "description": "Live context window breakdown in a panel under the prompt hint line.",
   "types": "./types/index.d.ts",
   "author": {
