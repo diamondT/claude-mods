@@ -3,7 +3,7 @@
   "owner": {
     "name": "diamondT"
   },
-  "description": "Claude Code mods: context band, status line and agents panel.",
+  "description": "Claude Code mods: context band, status line, agents panel and markdown cards.",
   "plugins": [
     {
       "name": "context-band",
@@ -19,6 +19,11 @@
       "name": "agents-panel",
       "source": "./agents-panel",
       "description": "Running subagents, their latest tool call and a timeline in a side panel."
+    },
+    {
+      "name": "markdown-cards",
+      "source": "./markdown-cards",
+      "description": "Markdown docs fenced in a reply drawn rendered in a card, with a toggle back to raw."
     }
   ]
 }

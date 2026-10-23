@@ -1,0 +1,9 @@
+{
+  "name": "markdown-cards",
+  "version": "0.20261023.1",
+  "description": "Markdown docs fenced in a reply drawn rendered in a card, with a toggle back to raw.",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "diamondT"
+  }
+}
